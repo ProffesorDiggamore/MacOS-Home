@@ -451,8 +451,9 @@ struct DayDots: View {
 
     var body: some View {
         Canvas { context, size in
-            let columns = Int((Double(total) * Double(size.width / max(size.height, 1))).squareRoot().rounded(.up))
-            let rows = Int((Double(total) / Double(max(columns, 1))).rounded(.up))
+            guard total > 0, size.width > 1, size.height > 1 else { return }
+            let columns = max(1, Int((Double(total) * Double(size.width / size.height)).squareRoot().rounded(.up)))
+            let rows = max(1, Int((Double(total) / Double(columns)).rounded(.up)))
             let cellWidth = size.width / CGFloat(max(columns, 1))
             let cellHeight = size.height / CGFloat(max(rows, 1))
             let diameter = max(2, min(cellWidth, cellHeight) * 0.62)
