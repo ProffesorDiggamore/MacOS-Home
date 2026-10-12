@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Home Widgets</string>
+	<key>CFBundleExecutable</key>
+	<string>HomeWidgets</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.github.proffesordiggamore.homewidgets</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Home Widgets</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Home Widgets shows your upcoming events in the Calendar widget.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Home Widgets shows your upcoming events in the Calendar widget.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Home Widgets shows your reminders and lets you check them off.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Home Widgets shows your reminders and lets you check them off.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Home Widgets uses your approximate location to show local weather.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Home Widgets uses your approximate location to show local weather.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Home Widgets controls Music, Spotify and system appearance for the Now Playing and Quick Actions widgets.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Home Widgets lists your recent downloads in the Folder widget.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Home Widgets lists files from the folder you choose in the Folder widget.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Home Widgets lists files from the folder you choose in the Folder widget.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Home Widgets shows a photo you choose in the Photo widget.</string>
+</dict>
+</plist>

@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    paths:
+      - "Sources/**"
+      - "Resources/**"
+      - "scripts/**"
+      - "Package.swift"
+      - "Makefile"
+      - ".github/workflows/build.yml"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build app
+        run: make app
+
+      - name: Zip app
+        run: cd build && ditto -c -k --keepParent "Home Widgets.app" "HomeWidgets-${{ matrix.os }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HomeWidgets-${{ matrix.os }}
+          path: build/HomeWidgets-${{ matrix.os }}.zip
