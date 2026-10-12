@@ -71,7 +71,7 @@ struct QuotesWidget: View {
     }
 
     private func price(_ value: Double) -> String {
-        if value >= 1000 { return String(format: "%.0f", value) }
+        if value >= 1000 { return value.formatted(.number.precision(.fractionLength(0))) }
         if value >= 1 { return String(format: "%.2f", value) }
         return String(format: "%.4f", value)
     }

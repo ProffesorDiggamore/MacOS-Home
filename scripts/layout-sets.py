@@ -54,7 +54,7 @@ SETS = {
         ("dice", "small", 4, 2, {}),
     ],
     7: [
-        ("palette", "medium", 0, 0, {}), ("crabPet", "medium", 2, 0, {}), ("sticker", "small", 4, 0, {}),
+        ("crabPet", "medium", 0, 0, {}), ("palette", "medium", 2, 0, {}), ("sticker", "small", 4, 0, {}),
         ("claude", "medium", 0, 1, {"display": {"string": {"_0": "mascot"}}}), ("text", "medium", 2, 1, {}),
         ("volume", "small", 4, 1, {}),
         ("diskActivity", "small", 0, 2, {}), ("wifi", "small", 1, 2, {}), ("clipboard", "medium", 2, 2, {}),

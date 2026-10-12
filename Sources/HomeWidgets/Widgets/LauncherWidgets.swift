@@ -55,6 +55,9 @@ struct AppShortcutsWidget: View {
 
     var body: some View {
         let visible = Array(apps.prefix(columns * rows))
+        // Only lay out the rows and columns that hold apps so a short list stays centered.
+        let usedColumns = max(1, min(columns, visible.count))
+        let usedRows = max(1, min(rows, (visible.count + usedColumns - 1) / usedColumns))
         let iconSize: CGFloat = showLabels ? (model.family == .small ? 46 : 50) : (model.family == .small ? 56 : 60)
         VStack(spacing: 0) {
             if visible.isEmpty {
@@ -62,10 +65,10 @@ struct AppShortcutsWidget: View {
                               detail: "Drag apps here, or right-click › Edit Widget.")
             } else {
                 Grid(horizontalSpacing: 8, verticalSpacing: showLabels ? 4 : 10) {
-                    ForEach(0..<rows, id: \.self) { row in
+                    ForEach(0..<usedRows, id: \.self) { row in
                         GridRow {
-                            ForEach(0..<columns, id: \.self) { column in
-                                let index = row * columns + column
+                            ForEach(0..<usedColumns, id: \.self) { column in
+                                let index = row * usedColumns + column
                                 if index < visible.count {
                                     AppTile(path: visible[index], iconSize: iconSize, showLabel: showLabels,
                                             isRunning: running.isRunning(visible[index]))
