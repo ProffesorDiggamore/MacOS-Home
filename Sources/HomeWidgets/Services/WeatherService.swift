@@ -39,14 +39,23 @@ struct WeatherReport: Equatable {
     /// Placeholder shown in the widget gallery.
     static var sample: WeatherReport {
         let now = Date()
-        let hours = (0..<12).map { index in
-            Hour(id: Double(index), date: now.addingTimeInterval(Double(index) * 3600),
-                 temperature: 22 - Double(index) * 0.6, code: index < 4 ? 1 : 2, isDay: index < 6)
+        var hours: [Hour] = []
+        for index in 0..<12 {
+            let offset = Double(index)
+            let temperature: Double = 22 - offset * 0.6
+            let code: Int = index < 4 ? 1 : 2
+            hours.append(Hour(id: offset, date: now.addingTimeInterval(offset * 3600),
+                              temperature: temperature, code: code, isDay: index < 6))
         }
-        let codes = [1, 2, 3, 61, 0, 2, 1]
-        let days = (0..<7).map { index in
-            Day(id: Double(index), date: now.addingTimeInterval(Double(index) * 86400), code: codes[index],
-                high: 24 - Double(index % 3), low: 14 + Double(index % 2), precipitation: index == 3 ? 70 : 10)
+        let codes: [Int] = [1, 2, 3, 61, 0, 2, 1]
+        var days: [Day] = []
+        for index in 0..<7 {
+            let offset = Double(index)
+            let high: Double = 24 - Double(index % 3)
+            let low: Double = 14 + Double(index % 2)
+            let rain: Int = index == 3 ? 70 : 10
+            days.append(Day(id: offset, date: now.addingTimeInterval(offset * 86400), code: codes[index],
+                            high: high, low: low, precipitation: rain))
         }
         return WeatherReport(place: "Cupertino", temperature: 22, apparent: 21, code: 1, isDay: true, humidity: 48,
                              wind: 9, high: 24, low: 14, sunrise: nil, sunset: nil, hours: hours, days: days, fetched: now)

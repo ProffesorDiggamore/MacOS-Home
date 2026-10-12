@@ -740,7 +740,6 @@ enum ProcessSort: String, ConfigOption {
 struct ProcessList: View {
     let entries: [ProcessMonitor.Entry]
     let metric: ProcessSort
-    @ObservedObject private var cpu = CPUMonitor.shared
 
     var body: some View {
         VStack(spacing: 6) {

@@ -386,10 +386,14 @@ struct FolderWidget: View {
 
     private var items: [FolderStore.Item] {
         if isSample {
-            return ["Essay Draft.pages", "Screenshot 2026-10-12.png", "Worship Setlist.pdf", "Project.zip", "Photo.heic"].enumerated().map { index, name in
-                FolderStore.Item(id: URL(fileURLWithPath: "/tmp/\(name)"), name: name,
-                                 date: Date().addingTimeInterval(Double(-index) * 5400), size: 1_200_000, isDirectory: false)
+            let names = ["Essay Draft.pages", "Screenshot.png", "Worship Setlist.pdf", "Project.zip", "Photo.heic"]
+            var samples: [FolderStore.Item] = []
+            for (index, name) in names.enumerated() {
+                let age = TimeInterval(index) * -5400
+                samples.append(FolderStore.Item(id: URL(fileURLWithPath: "/tmp/" + name), name: name,
+                                                date: Date().addingTimeInterval(age), size: 1_200_000, isDirectory: false))
             }
+            return samples
         }
         return store.items[path] ?? []
     }
