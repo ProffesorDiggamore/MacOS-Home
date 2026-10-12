@@ -549,7 +549,7 @@ final class CairnService: ObservableObject {
                 let ok = putStatus == 200 || putStatus == 201
                 completion(ok)
                 if ok {
-                    self.vaults[repo, default: Vault()].todayText = Self.body(updated)
+                    self.vaults[repo, default: Vault()].todayText = Self.body(of: updated)
                     self.lastRefresh = [:]
                 }
             }

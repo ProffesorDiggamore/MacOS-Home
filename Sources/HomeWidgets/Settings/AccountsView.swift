@@ -4,7 +4,9 @@ import AppKit
 struct AccountsView: View {
     @ObservedObject private var github = GitHubService.shared
     @ObservedObject private var mail = MailService.shared
+    @ObservedObject private var cairn = CairnService.shared
     @State private var token = ""
+    @State private var cairnToken = ""
     @State private var connecting = false
     @State private var message: String?
 
@@ -67,16 +69,34 @@ struct AccountsView: View {
             }
 
             Section("Cairn Notes") {
-                Text("Cairn syncs your notes to a GitHub repository, so the Cairn widget uses your GitHub token. Add a Cairn Notes widget, then right-click it › Edit Widget and type your notes repo (for example you/notes). Quick capture adds lines to an Inbox note and commits them, so the token needs the repo permission.")
+                Text("Cairn syncs your vault to a GitHub repository, so the Cairn widget talks to that repo directly. It reuses your GitHub token above, or you can paste the token you already use in Cairn (a fine-grained token with Contents read & write on your notes repo).")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                if CairnService.cairnAppURL != nil {
-                    Label("Cairn app found. Clicking a note opens Cairn.", systemImage: "checkmark.circle")
-                        .foregroundStyle(Color.green)
+                if cairn.hasOwnToken {
+                    HStack {
+                        Label("Using your Cairn token", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Color.green)
+                        Spacer()
+                        Button("Remove") { cairn.setOwnToken(nil) }
+                    }
                 } else {
-                    Label("Cairn app not found in Applications. Notes will open on GitHub instead.", systemImage: "info.circle")
+                    HStack {
+                        SecureField("Cairn token (optional)", text: $cairnToken)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Save") {
+                            cairn.setOwnToken(cairnToken)
+                            cairnToken = ""
+                        }
+                        .disabled(cairnToken.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    Label(github.isConnected ? "Using your GitHub token." : "Connect GitHub above or paste a Cairn token.",
+                          systemImage: github.isConnected ? "checkmark.circle" : "info.circle")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Text("Then add a Cairn Notes widget. Quick capture adds bullets or to-dos to today's daily note, and Cairn picks them up on its next sync.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Mail (Gmail, iCloud, Outlook…)") {
@@ -97,7 +117,7 @@ struct AccountsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { github.loadToken() }
+        .onAppear { github.loadToken(); cairn.loadToken() }
     }
 
     private func connect() {

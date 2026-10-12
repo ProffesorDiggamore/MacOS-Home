@@ -500,13 +500,16 @@ struct CounterWidget: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text("\(count)")
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    + Text(goal > 0 ? " / \(goal)" : "")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundColor(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text("\(count)")
+                        .font(.system(size: 46, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                    if goal > 0 {
+                        Text("/ \(goal)")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 HStack(spacing: 14) {
                     Button { change(-1) } label: {
                         Image(systemName: "minus").font(.system(size: 14, weight: .bold))
