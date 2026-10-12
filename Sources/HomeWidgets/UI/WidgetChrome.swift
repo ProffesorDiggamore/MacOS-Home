@@ -23,6 +23,10 @@ private struct WidgetAccentKey: EnvironmentKey {
     static let defaultValue: Color = .accentColor
 }
 
+private struct WidgetIsVisibleKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 extension EnvironmentValues {
     var widgetStyle: WidgetStyle {
         get { self[WidgetStyleKey.self] }
@@ -37,6 +41,12 @@ extension EnvironmentValues {
     var widgetAccent: Color {
         get { self[WidgetAccentKey.self] }
         set { self[WidgetAccentKey.self] = newValue }
+    }
+
+    /// False while the widget is covered or hidden; animated widgets pause.
+    var widgetIsVisible: Bool {
+        get { self[WidgetIsVisibleKey.self] }
+        set { self[WidgetIsVisibleKey.self] = newValue }
     }
 }
 
@@ -80,8 +90,10 @@ struct WidgetChrome<Content: View>: View {
         return WidgetStyle.available.contains(chosen) ? chosen : .glass
     }
 
+    private var backgroundImagePath: String { model[BackgroundKeys.image] }
+
     private var scheme: ColorScheme {
-        if style == .tinted { return .dark }
+        if style == .tinted || !backgroundImagePath.isEmpty { return .dark }
         switch appearance.scheme {
         case .light: return .light
         case .dark: return .dark
@@ -95,16 +107,23 @@ struct WidgetChrome<Content: View>: View {
         content
             .frame(width: size.width, height: size.height)
             .backgroundPreferenceValue(CustomBackgroundKey.self) { custom in
-                WidgetBackground(style: style,
-                                 custom: custom,
-                                 dark: scheme == .dark,
-                                 opacity: appearance.backgroundOpacity,
-                                 accent: appearance.accentColor,
-                                 withinWindow: context != .desktop)
+                if backgroundImagePath.isEmpty || custom == .edgeToEdge {
+                    WidgetBackground(style: style,
+                                     custom: custom,
+                                     dark: scheme == .dark,
+                                     opacity: appearance.backgroundOpacity,
+                                     accent: appearance.accentColor,
+                                     withinWindow: context != .desktop)
+                } else {
+                    ImageBackground(path: backgroundImagePath,
+                                    dim: model[BackgroundKeys.dim],
+                                    blur: model[BackgroundKeys.blur],
+                                    size: size)
+                }
             }
             .clipShape(shape)
-            .overlay {
-                if style == .glass || style == .liquidGlass {
+            .overlayPreferenceValue(CustomBackgroundKey.self) { custom in
+                if (style == .glass || style == .liquidGlass) && custom != .edgeToEdge && backgroundImagePath.isEmpty {
                     shape.strokeBorder(Color.white.opacity(scheme == .dark ? 0.10 : 0.45), lineWidth: 0.5)
                 }
             }
@@ -191,6 +210,30 @@ struct WidgetBackground: View {
             case .clear:
                 Color.clear
             }
+        }
+    }
+}
+
+/// A photo you chose as the widget's background, dimmed so text stays readable.
+struct ImageBackground: View {
+    let path: String
+    let dim: Double
+    let blur: Double
+    let size: CGSize
+
+    var body: some View {
+        ZStack {
+            if let image = ImageStore.image(at: path, maxPixel: Int(max(size.width, size.height) * 2)) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height)
+                    .blur(radius: blur, opaque: true)
+                    .clipped()
+            } else {
+                Color.gray
+            }
+            Color.black.opacity(dim)
         }
     }
 }

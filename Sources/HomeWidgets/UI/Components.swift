@@ -189,6 +189,30 @@ struct Ticking<Content: View>: View {
     }
 }
 
+/// Redraws its content at a fixed frame rate while the widget is visible; pauses when covered.
+struct Animated<Content: View>: View {
+    var fps: Double = 20
+    @ViewBuilder var content: (Date) -> Content
+    @Environment(\.widgetIsVisible) private var visible
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / max(1, fps), paused: !visible)) { timeline in
+            content(timeline.date)
+        }
+    }
+}
+
+/// A deterministic pseudo-random number in 0..<1 for a seed (stable across frames).
+func seededRandom(_ seed: Int) -> Double {
+    var x = UInt64(bitPattern: Int64(seed)) &* 0x9E37_79B9_7F4A_7C15
+    x ^= x >> 30
+    x = x &* 0xBF58_476D_1CE4_E5B9
+    x ^= x >> 27
+    x = x &* 0x94D0_49BB_1331_11EB
+    x ^= x >> 31
+    return Double(x % 1_000_000) / 1_000_000
+}
+
 /// Centered icon + message used for empty and permission states.
 struct WidgetMessage: View {
     let symbol: String

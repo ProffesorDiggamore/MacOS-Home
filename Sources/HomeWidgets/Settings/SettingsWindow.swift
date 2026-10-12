@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case gallery, myWidgets, appearance, general, about
+    case gallery, myWidgets, accounts, appearance, general, about
     var id: String { rawValue }
 }
 
@@ -23,6 +23,7 @@ struct SettingsRootView: View {
                     Label("My Widgets", systemImage: "rectangle.stack").tag(SettingsPane.myWidgets)
                 }
                 Section("Settings") {
+                    Label("Accounts", systemImage: "person.crop.circle").tag(SettingsPane.accounts)
                     Label("Appearance", systemImage: "paintbrush").tag(SettingsPane.appearance)
                     Label("General", systemImage: "gearshape").tag(SettingsPane.general)
                     Label("About", systemImage: "info.circle").tag(SettingsPane.about)
@@ -33,6 +34,7 @@ struct SettingsRootView: View {
             switch state.pane ?? .gallery {
             case .gallery: GalleryView()
             case .myWidgets: MyWidgetsView()
+            case .accounts: AccountsView()
             case .appearance: AppearanceView()
             case .general: GeneralView()
             case .about: AboutView()
@@ -105,6 +107,28 @@ struct GalleryView: View {
     }
 }
 
+/// Segmented control for the usual three sizes, a menu when there are more shapes.
+struct SizePicker: View {
+    let sizes: [WidgetSize]
+    @Binding var selection: WidgetSize
+
+    var body: some View {
+        if sizes.count <= 3 {
+            Picker("Size", selection: $selection) {
+                ForEach(sizes) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        } else {
+            Picker("Size", selection: $selection) {
+                ForEach(sizes) { size in
+                    Text("\(size.label)  (\(size.cells.columns)×\(size.cells.rows))").tag(size)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+    }
+}
+
 struct GalleryCard: View {
     let kind: WidgetKind
     @State private var size: WidgetSize
@@ -143,12 +167,9 @@ struct GalleryCard: View {
 
             HStack {
                 if kind.sizes.count > 1 {
-                    Picker("Size", selection: $size) {
-                        ForEach(kind.sizes) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                    SizePicker(sizes: kind.sizes, selection: $size)
+                        .labelsHidden()
+                        .fixedSize()
                 }
                 Spacer()
                 Button {
@@ -253,10 +274,7 @@ struct WidgetEditor: View {
 
             Section("Layout") {
                 if model.kind.sizes.count > 1 {
-                    Picker("Size", selection: $model.size) {
-                        ForEach(model.kind.sizes) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
+                    SizePicker(sizes: model.kind.sizes, selection: $model.size)
                 }
                 Picker("Style", selection: $model.styleOverride) {
                     Text("Same as Other Widgets").tag(WidgetStyle?.none)
@@ -265,6 +283,10 @@ struct WidgetEditor: View {
             }
 
             WidgetOptions(model: model)
+
+            if ![WidgetKind.photo, .sticker].contains(model.kind) {
+                BackgroundImageSection(model: model)
+            }
 
             Section {
                 Button("Remove Widget", role: .destructive) {

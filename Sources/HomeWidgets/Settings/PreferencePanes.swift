@@ -128,6 +128,16 @@ struct GeneralView: View {
                 Button("Arrange Widgets Neatly") { AppController.shared.arrangeWidgets() }
             }
 
+            Section("App") {
+                Toggle("Show icon in the Dock", isOn: $appearance.showInDock)
+                Toggle("Show icon in the menu bar", isOn: $appearance.showMenuBarIcon)
+                if !appearance.showInDock && !appearance.showMenuBarIcon {
+                    Text("To get back here later, open Home Widgets from your Applications folder or Spotlight.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Behavior") {
                 Toggle("Open at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in

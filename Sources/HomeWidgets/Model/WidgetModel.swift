@@ -11,6 +11,8 @@ final class WidgetModel: ObservableObject, Identifiable {
     @Published var config: WidgetConfig
     /// When set, overrides the global widget style for just this widget.
     @Published var styleOverride: WidgetStyle?
+    /// Live, unsaved state (e.g. whether the widget is currently visible on screen).
+    let runtime = WidgetRuntime()
 
     init(id: UUID = UUID(),
          kind: WidgetKind,
@@ -27,6 +29,9 @@ final class WidgetModel: ObservableObject, Identifiable {
         self.styleOverride = styleOverride
     }
 
+    /// Which layout to use (small, medium or large), whatever the exact shape.
+    var family: WidgetFamily { size.family }
+
     var frame: CGRect {
         let dimensions = size.dimensions
         return CGRect(x: topLeft.x, y: topLeft.y - dimensions.height,
@@ -40,6 +45,19 @@ final class WidgetModel: ObservableObject, Identifiable {
     func binding<Value: ConfigStorable>(_ key: ConfigKey<Value>) -> Binding<Value> {
         Binding(get: { self.config[key] }, set: { self.config[key] = $0 })
     }
+}
+
+/// Things about a widget that change constantly and are never saved.
+final class WidgetRuntime: ObservableObject {
+    /// False while the widget is covered by other windows or hidden, so animations can pause.
+    @Published var isOnScreen = true
+}
+
+/// Settings every widget has: a custom background image.
+enum BackgroundKeys {
+    static let image = ConfigKey("bgImage", "")
+    static let dim = ConfigKey("bgDim", 0.25)
+    static let blur = ConfigKey("bgBlur", 0.0)
 }
 
 /// On-disk representation of a widget.

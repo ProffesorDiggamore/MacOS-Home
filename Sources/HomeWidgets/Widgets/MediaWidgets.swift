@@ -14,7 +14,7 @@ struct NowPlayingWidget: View {
     var body: some View {
         Group {
             if let track {
-                switch model.size {
+                switch model.family {
                 case .small, .large: small(track)
                 case .medium: medium(track)
                 }
@@ -100,73 +100,6 @@ struct NowPlayingWidget: View {
     }
 }
 
-// MARK: - Photo
-
-enum PhotoKeys {
-    static let path = ConfigKey("path", "")
-    static let minutes = ConfigKey("minutes", 30)
-}
-
-struct PhotoWidget: View {
-    @ObservedObject var model: WidgetModel
-    @State private var image: NSImage?
-    @State private var loadedKey = ""
-
-    private var path: String { (model[PhotoKeys.path] as NSString).expandingTildeInPath }
-
-    var body: some View {
-        let interval = TimeInterval(max(1, model[PhotoKeys.minutes]) * 60)
-        TimelineView(.periodic(from: Date(timeIntervalSinceReferenceDate: 0), by: interval)) { timeline in
-            let slot = Int(timeline.date.timeIntervalSinceReferenceDate / interval)
-            content
-                .onAppear { load(slot: slot) }
-                .onChange(of: slot) { _, newSlot in load(slot: newSlot) }
-                .onChange(of: path) { _, _ in load(slot: slot) }
-        }
-        .widgetBackground(image == nil ? nil : CustomBackground.edgeToEdge)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let image {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: model.size.dimensions.width, height: model.size.dimensions.height)
-                .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { if !path.isEmpty { Shell.open(path: path) } }
-        } else {
-            WidgetMessage(symbol: "photo.on.rectangle.angled", title: "Choose a photo",
-                          detail: "Right-click › Edit Widget to pick a photo or a folder for a slideshow.")
-        }
-    }
-
-    private func load(slot: Int) {
-        let target = path
-        guard !target.isEmpty else {
-            image = nil
-            return
-        }
-        let key = "\(target)#\(slot)"
-        guard key != loadedKey else { return }
-        loadedKey = key
-        let pixels = Int(max(model.size.dimensions.width, model.size.dimensions.height) * 2.5)
-        DispatchQueue.global(qos: .utility).async {
-            var isDirectory: ObjCBool = false
-            _ = FileManager.default.fileExists(atPath: target, isDirectory: &isDirectory)
-            var file = URL(fileURLWithPath: target)
-            if isDirectory.boolValue {
-                let images = ImageLoader.imageFiles(in: file)
-                if images.isEmpty { return }
-                file = images[abs(slot) % images.count]
-            }
-            let loaded = ImageLoader.thumbnail(at: file, maxPixel: pixels)
-            DispatchQueue.main.async { image = loaded }
-        }
-    }
-}
-
 // MARK: - Verse of the day
 
 enum VerseKeys {
@@ -184,7 +117,7 @@ struct VerseWidget: View {
     }
 
     private func verse(for date: Date) -> Verse {
-        let pool = model.size == .small ? Verses.short : Verses.all
+        let pool = model.family == .small ? Verses.short : Verses.all
         let day = Calendar.current.ordinality(of: .day, in: .era, for: date) ?? 0
         let index = (day + model[VerseKeys.shuffle]) % pool.count
         return pool[(index + pool.count) % pool.count]
@@ -193,8 +126,8 @@ struct VerseWidget: View {
     @ViewBuilder
     private func content(_ now: Date) -> some View {
         let verse = verse(for: now)
-        let textSize: CGFloat = model.size == .small ? 13 : (model.size == .medium ? 15 : 20)
-        VStack(alignment: .leading, spacing: model.size == .large ? 12 : 6) {
+        let textSize: CGFloat = model.family == .small ? 13 : (model.family == .medium ? 15 : 20)
+        VStack(alignment: .leading, spacing: model.family == .large ? 12 : 6) {
             HStack(spacing: 5) {
                 Image(systemName: "book.closed.fill")
                     .font(.system(size: 11, weight: .bold))
@@ -217,11 +150,11 @@ struct VerseWidget: View {
                 .lineSpacing(2)
                 .minimumScaleFactor(0.55)
             Text("— \(verse.reference) (KJV)")
-                .font(.system(size: model.size == .small ? 11 : 12.5, weight: .semibold, design: .serif))
+                .font(.system(size: model.family == .small ? 11 : 12.5, weight: .semibold, design: .serif))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
-        .widgetPadding(model.size == .large ? 22 : 16)
+        .widgetPadding(model.family == .large ? 22 : 16)
     }
 }
 
@@ -314,7 +247,7 @@ struct MoonPhaseWidget: View {
 
     var body: some View {
         Ticking(everySecond: false) { now in
-            switch model.size {
+            switch model.family {
             case .small, .large: small(now)
             case .medium: medium(now)
             }

@@ -36,7 +36,7 @@ struct CalendarWidget: View {
 
     @ViewBuilder
     private func content(_ now: Date) -> some View {
-        switch model.size {
+        switch model.family {
         case .small:
             VStack(alignment: .leading, spacing: 0) {
                 Text(DateFormats.string(now, template: "EEEE").uppercased())
@@ -289,7 +289,7 @@ struct CountdownWidget: View {
         let unit = label.unit
         let icon = model[CountdownKeys.symbol].symbol
 
-        switch model.size {
+        switch model.family {
         case .small, .large:
             VStack(alignment: .leading, spacing: 2) {
                 Image(systemName: icon)
@@ -371,7 +371,7 @@ struct YearProgressWidget: View {
         let yearFraction = fraction(.year, now)
         let tone = style.tone(accent)
 
-        switch model.size {
+        switch model.family {
         case .small:
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(year))

@@ -70,7 +70,7 @@ struct ClockWidget: View {
         let showDate = model[ClockKeys.showDate]
         let place = model[ClockKeys.timeZone].isEmpty ? nil : zone.cityName
 
-        switch model.size {
+        switch model.family {
         case .small:
             VStack(alignment: .leading, spacing: 2) {
                 Text(DateFormats.string(date, template: "EEEE", timeZone: zone).uppercased())
@@ -301,7 +301,7 @@ struct AnalogClockWidget: View {
         let face = AnalogClockFace(date: date, timeZone: zone, showSeconds: model[AnalogKeys.showSeconds],
                                    numerals: model[AnalogKeys.numerals], dark: dark,
                                    secondColor: style == .tinted ? .white : .orange)
-        switch model.size {
+        switch model.family {
         case .small:
             face.padding(10)
         case .medium:
@@ -352,8 +352,8 @@ struct WorldClockWidget: View {
     }
 
     var body: some View {
-        Ticking(everySecond: model.size == .medium) { date in
-            switch model.size {
+        Ticking(everySecond: model.family == .medium) { date in
+            switch model.family {
             case .small: list(date, limit: 4, compact: true)
             case .medium: faces(date)
             case .large: list(date, limit: 7, compact: false)

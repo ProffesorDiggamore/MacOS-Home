@@ -17,12 +17,12 @@ final class AppController: NSObject, NSMenuDelegate {
 
     // MARK: Startup
 
-    func start() {
+    func start(showWindow: Bool) {
         let hadSavedWidgets = store.load()
         if !hadSavedWidgets {
             installDefaultWidgets()
         }
-        setupStatusItem()
+        applyAppPresence()
         syncPanels(store.widgets)
 
         store.$widgets
@@ -33,7 +33,10 @@ final class AppController: NSObject, NSMenuDelegate {
 
         appearance.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.applyWindowSettings() }
+            .sink { [weak self] _ in
+                self?.applyWindowSettings()
+                self?.applyAppPresence()
+            }
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
@@ -41,8 +44,26 @@ final class AppController: NSObject, NSMenuDelegate {
             .sink { [weak self] _ in self?.screensChanged() }
             .store(in: &cancellables)
 
-        if !hadSavedWidgets {
-            showSettings(pane: .gallery)
+        if showWindow || !hadSavedWidgets {
+            showSettings(pane: hadSavedWidgets ? nil : .gallery)
+        }
+    }
+
+    /// Dock icon and menu bar icon, based on settings. At least one way back into the app stays available:
+    /// opening the app from Finder or Spotlight always shows the window.
+    private func applyAppPresence() {
+        let policy: NSApplication.ActivationPolicy = appearance.showInDock ? .regular : .accessory
+        if NSApp.activationPolicy() != policy {
+            NSApp.setActivationPolicy(policy)
+            if policy == .regular, settingsWindow?.isVisible == true {
+                NSApp.activate()
+            }
+        }
+        if appearance.showMenuBarIcon {
+            if statusItem == nil { setupStatusItem() }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
         }
     }
 
@@ -193,6 +214,7 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(add)
         menu.addItem(menuItem("Widget Gallery…", #selector(openGallery), key: "n"))
         menu.addItem(menuItem("Edit Widgets…", #selector(openMyWidgets), key: "e"))
+        menu.addItem(menuItem("Accounts…", #selector(openAccounts)))
         menu.addItem(.separator())
 
         let hide = menuItem("Hide Widgets", #selector(toggleHidden), key: "h")
@@ -215,6 +237,19 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(menuItem("Quit Home Widgets", #selector(quit), key: "q"))
     }
 
+    /// Right-click menu on the Dock icon.
+    func dockMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(menuItem("Widget Gallery", #selector(openGallery)))
+        menu.addItem(menuItem("My Widgets", #selector(openMyWidgets)))
+        menu.addItem(.separator())
+        let hide = menuItem("Hide Widgets", #selector(toggleHidden))
+        hide.state = appearance.hidden ? .on : .off
+        menu.addItem(hide)
+        menu.addItem(menuItem("Arrange Widgets", #selector(arrangeFromMenu)))
+        return menu
+    }
+
     private func menuItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
@@ -229,6 +264,7 @@ final class AppController: NSObject, NSMenuDelegate {
     @objc private func openGallery() { showSettings(pane: .gallery) }
     @objc private func openMyWidgets() { showSettings(pane: .myWidgets) }
     @objc private func openAppearance() { showSettings(pane: .appearance) }
+    @objc private func openAccounts() { showSettings(pane: .accounts) }
     @objc private func toggleHidden() { appearance.hidden.toggle() }
     @objc private func toggleLock() { appearance.locked.toggle() }
     @objc private func toggleFloating() { appearance.layer = appearance.layer == .floating ? .desktop : .floating }

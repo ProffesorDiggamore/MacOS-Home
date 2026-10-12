@@ -133,6 +133,8 @@ final class AppearanceSettings: ObservableObject {
     @Published var hidden: Bool { didSet { defaults.set(hidden, forKey: "hidden") } }
     @Published var refreshInterval: Double { didSet { defaults.set(refreshInterval, forKey: "refreshInterval") } }
     @Published var temperatureUnit: TemperatureUnit { didSet { defaults.set(temperatureUnit.rawValue, forKey: "temperatureUnit") } }
+    @Published var showInDock: Bool { didSet { defaults.set(showInDock, forKey: "showInDock") } }
+    @Published var showMenuBarIcon: Bool { didSet { defaults.set(showMenuBarIcon, forKey: "showMenuBarIcon") } }
 
     init() {
         style = WidgetStyle(rawValue: defaults.string(forKey: "style") ?? "") ?? .glass
@@ -146,6 +148,8 @@ final class AppearanceSettings: ObservableObject {
         hidden = defaults.bool(forKey: "hidden")
         refreshInterval = defaults.object(forKey: "refreshInterval") as? Double ?? 1.0
         temperatureUnit = TemperatureUnit(rawValue: defaults.string(forKey: "temperatureUnit") ?? "") ?? .system
+        showInDock = defaults.object(forKey: "showInDock") as? Bool ?? true
+        showMenuBarIcon = defaults.object(forKey: "showMenuBarIcon") as? Bool ?? true
     }
 
     var accentColor: Color { accent.color }

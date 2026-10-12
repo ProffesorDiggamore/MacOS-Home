@@ -33,6 +33,37 @@ SETS = {
         ("weather", "medium", 0, 2, {"city": {"string": {"_0": "Tokyo"}}}),
         ("reminders", "small", 2, 2, {}), ("folder", "small", 3, 2, {}), ("photo", "small", 4, 2, {}),
     ],
+    4: [
+        ("github", "medium", 0, 0, {}), ("contributions", "medium", 2, 0, {}), ("cairn", "small", 4, 0, {}),
+        ("mail", "small", 0, 1, {}), ("news", "medium", 1, 1, {}), ("hackerNews", "medium", 3, 1, {}),
+        ("stocks", "medium", 0, 2, {}), ("crypto", "small", 2, 2, {}), ("currency", "small", 3, 2, {}),
+        ("serviceStatus", "small", 4, 2, {}),
+    ],
+    5: [
+        ("sports", "medium", 0, 0, {"league": {"string": {"_0": "nfl"}}}), ("uptime", "small", 2, 0, {}),
+        ("todo", "small", 3, 0, {}), ("weather", "tall", 4, 0, {"city": {"string": {"_0": "Dallas"}}}),
+        ("habits", "medium", 0, 1, {}), ("links", "small", 2, 1, {}), ("calculator", "small", 3, 1, {}),
+        ("counter", "small", 0, 2, {}), ("stopwatch", "small", 1, 2, {}), ("sunArc", "medium", 2, 2, {"city": {"string": {"_0": "Dallas"}}}),
+        ("binaryClock", "small", 4, 2, {}),
+    ],
+    6: [
+        ("flipClock", "medium", 0, 0, {}), ("wordClock", "small", 2, 0, {}), ("lavaLamp", "small", 3, 0, {}),
+        ("digitalRain", "small", 4, 0, {}),
+        ("aquarium", "medium", 0, 1, {}), ("nightSky", "medium", 2, 1, {}), ("lifeGame", "small", 4, 1, {}),
+        ("bounce", "medium", 0, 2, {}), ("moodGradient", "small", 2, 2, {}), ("plant", "small", 3, 2, {}),
+        ("dice", "small", 4, 2, {}),
+    ],
+    7: [
+        ("palette", "medium", 0, 0, {}), ("crabPet", "medium", 2, 0, {}), ("sticker", "small", 4, 0, {}),
+        ("claude", "medium", 0, 1, {"display": {"string": {"_0": "mascot"}}}), ("text", "medium", 2, 1, {}),
+        ("volume", "small", 4, 1, {}),
+        ("diskActivity", "small", 0, 2, {}), ("wifi", "small", 1, 2, {}), ("clipboard", "medium", 2, 2, {}),
+        ("quickActions", "small", 4, 2, {}),
+    ],
+    8: [
+        ("appShortcuts", "wide", 0, 0, {}), ("text", "tall", 4, 0, {"text": {"string": {"_0": "Be strong and of a good courage 💪"}}}),
+        ("nightSky", "extraLarge", 0, 1, {}), ("clock", "small", 4, 2, {}),
+    ],
 }
 
 

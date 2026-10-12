@@ -43,9 +43,10 @@ struct AppShortcutsWidget: View {
     @ObservedObject private var running = RunningApps.shared
     @State private var dropTargeted = false
 
-    private var columns: Int { model.size == .small ? 2 : 4 }
-    private var rows: Int { model.size == .large ? 4 : 2 }
     private var showLabels: Bool { model[AppShortcutKeys.showLabels] }
+    /// Fits as many app icons as the widget's shape allows.
+    private var columns: Int { max(1, Int((model.size.dimensions.width - 16) / 72)) }
+    private var rows: Int { max(1, Int((model.size.dimensions.height - 20) / (showLabels ? 70 : 72))) }
 
     private var apps: [String] {
         let stored = model[AppShortcutKeys.apps]
@@ -54,7 +55,7 @@ struct AppShortcutsWidget: View {
 
     var body: some View {
         let visible = Array(apps.prefix(columns * rows))
-        let iconSize: CGFloat = showLabels ? (model.size == .small ? 46 : 50) : (model.size == .small ? 56 : 60)
+        let iconSize: CGFloat = showLabels ? (model.family == .small ? 46 : 50) : (model.family == .small ? 56 : 60)
         VStack(spacing: 0) {
             if visible.isEmpty {
                 WidgetMessage(symbol: "square.grid.3x3", title: "No apps yet",
@@ -284,8 +285,8 @@ struct QuickActionsWidget: View {
         return actions + shortcuts
     }
 
-    private var columns: Int { model.size == .small ? 2 : 4 }
-    private var rows: Int { model.size == .large ? 4 : 2 }
+    private var columns: Int { max(1, Int((model.size.dimensions.width - 16) / 74)) }
+    private var rows: Int { max(1, Int((model.size.dimensions.height - 20) / 67)) }
 
     var body: some View {
         let visible = Array(items.prefix(columns * rows))
@@ -402,8 +403,8 @@ struct FolderWidget: View {
 
     @ViewBuilder
     private var content: some View {
-        let limit = model.size == .large ? 10 : (model.size == .medium ? 4 : 3)
-        VStack(alignment: .leading, spacing: model.size == .small ? 6 : 7) {
+        let limit = model.family == .large ? 10 : (model.family == .medium ? 4 : 3)
+        VStack(alignment: .leading, spacing: model.family == .small ? 6 : 7) {
             Button {
                 Shell.open(path: path)
             } label: {
@@ -420,7 +421,7 @@ struct FolderWidget: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(items.prefix(limit)) { item in
-                    FileRow(item: item, compact: model.size == .small, sample: isSample)
+                    FileRow(item: item, compact: model.family == .small, sample: isSample)
                 }
             }
             Spacer(minLength: 0)

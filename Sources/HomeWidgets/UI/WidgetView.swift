@@ -3,15 +3,35 @@ import SwiftUI
 /// Picks the right view for a widget and wraps it in the shared chrome.
 struct WidgetView: View {
     @ObservedObject var model: WidgetModel
+    @ObservedObject private var runtime: WidgetRuntime
+    @ObservedObject private var appearance = AppearanceSettings.shared
+
+    init(model: WidgetModel) {
+        self.model = model
+        _runtime = ObservedObject(wrappedValue: model.runtime)
+    }
 
     var body: some View {
         WidgetChrome(model: model) {
             content
         }
+        .environment(\.widgetIsVisible, runtime.isOnScreen && !appearance.hidden)
     }
 
     @ViewBuilder
     private var content: some View {
+        switch model.kind.category {
+        case .time: timeWidget
+        case .system: systemWidget
+        case .productivity: productivityWidget
+        case .web: webWidget
+        case .media: mediaWidget
+        case .fun: funWidget
+        }
+    }
+
+    @ViewBuilder
+    private var timeWidget: some View {
         switch model.kind {
         case .clock: ClockWidget(model: model)
         case .analogClock: AnalogClockWidget(model: model)
@@ -19,6 +39,18 @@ struct WidgetView: View {
         case .calendar: CalendarWidget(model: model)
         case .countdown: CountdownWidget(model: model)
         case .yearProgress: YearProgressWidget(model: model)
+        case .flipClock: FlipClockWidget(model: model)
+        case .wordClock: WordClockWidget(model: model)
+        case .binaryClock: BinaryClockWidget(model: model)
+        case .stopwatch: StopwatchWidget(model: model)
+        case .sunArc: SunArcWidget(model: model)
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var systemWidget: some View {
+        switch model.kind {
         case .systemStats: SystemStatsWidget(model: model)
         case .cpu: CPUWidget(model: model)
         case .gpu: GPUWidget(model: model)
@@ -28,6 +60,17 @@ struct WidgetView: View {
         case .battery: BatteryWidget(model: model)
         case .topProcesses: TopProcessesWidget(model: model)
         case .systemInfo: SystemInfoWidget(model: model)
+        case .diskActivity: DiskActivityWidget(model: model)
+        case .wifi: WiFiWidget(model: model)
+        case .volume: VolumeWidget(model: model)
+        case .clipboard: ClipboardWidget(model: model)
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var productivityWidget: some View {
+        switch model.kind {
         case .claude: ClaudeWidget(model: model)
         case .appShortcuts: AppShortcutsWidget(model: model)
         case .quickActions: QuickActionsWidget(model: model)
@@ -36,10 +79,62 @@ struct WidgetView: View {
         case .note: NoteWidget(model: model)
         case .folder: FolderWidget(model: model)
         case .weather: WeatherWidget(model: model)
+        case .todo: TodoWidget(model: model)
+        case .habits: HabitsWidget(model: model)
+        case .links: LinksWidget(model: model)
+        case .calculator: CalculatorWidget(model: model)
+        case .counter: CounterWidget(model: model)
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var webWidget: some View {
+        switch model.kind {
+        case .github: GitHubWidget(model: model)
+        case .contributions: ContributionsWidget(model: model)
+        case .cairn: CairnWidget(model: model)
+        case .mail: MailWidget(model: model)
+        case .news: NewsWidget(model: model)
+        case .hackerNews: HackerNewsWidget(model: model)
+        case .stocks: QuotesWidget(model: model, isCrypto: false)
+        case .crypto: QuotesWidget(model: model, isCrypto: true)
+        case .currency: CurrencyWidget(model: model)
+        case .sports: SportsWidget(model: model)
+        case .uptime: UptimeWidget(model: model)
+        case .serviceStatus: ServiceStatusWidget(model: model)
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var mediaWidget: some View {
+        switch model.kind {
         case .nowPlaying: NowPlayingWidget(model: model)
         case .photo: PhotoWidget(model: model)
+        case .sticker: StickerWidget(model: model)
+        case .text: TextWidget(model: model)
         case .verse: VerseWidget(model: model)
         case .moonPhase: MoonPhaseWidget(model: model)
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var funWidget: some View {
+        switch model.kind {
+        case .crabPet: CrabPetWidget(model: model)
+        case .lavaLamp: LavaLampWidget(model: model)
+        case .aquarium: AquariumWidget(model: model)
+        case .digitalRain: DigitalRainWidget(model: model)
+        case .nightSky: NightSkyWidget(model: model)
+        case .lifeGame: LifeGameWidget(model: model)
+        case .bounce: BounceWidget(model: model)
+        case .moodGradient: MoodGradientWidget(model: model)
+        case .palette: PaletteWidget(model: model)
+        case .dice: DiceWidget(model: model)
+        case .plant: PlantWidget(model: model)
+        default: EmptyView()
         }
     }
 }

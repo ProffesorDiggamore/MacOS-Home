@@ -75,10 +75,11 @@ final class WidgetPanel: NSPanel {
         super.sendEvent(cancel)
     }
 
+    /// Text fields, sliders and other AppKit controls handle their own dragging.
     private static func isTextView(_ view: NSView?) -> Bool {
         var current = view
         while let candidate = current {
-            if candidate is NSText || candidate is NSTextField { return true }
+            if candidate is NSText || candidate is NSControl { return true }
             current = candidate.superview
         }
         return false
@@ -132,6 +133,11 @@ final class WidgetPanelController {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.applySettings() }
             .store(in: &cancellables)
+        // Pause animations while the widget is covered by windows or hidden.
+        NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: panel)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateVisibility() }
+            .store(in: &cancellables)
 
         applySettings()
     }
@@ -161,6 +167,13 @@ final class WidgetPanelController {
             panel.orderFrontRegardless()
         }
         refreshShadow()
+    }
+
+    private func updateVisibility() {
+        let visible = panel.isVisible && panel.occlusionState.contains(.visible)
+        if model.runtime.isOnScreen != visible {
+            model.runtime.isOnScreen = visible
+        }
     }
 
     /// The window shadow is computed from the widget's shape, so recompute it after the content draws.

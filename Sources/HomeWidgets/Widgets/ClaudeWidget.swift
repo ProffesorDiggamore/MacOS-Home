@@ -3,6 +3,18 @@ import SwiftUI
 enum ClaudeKeys {
     static let showUsage = ConfigKey("showUsage", true)
     static let showIdle = ConfigKey("showIdle", true)
+    static let display = ConfigKey("display", ClaudeDisplay.sessions)
+}
+
+enum ClaudeDisplay: String, ConfigOption {
+    case sessions, mascot
+
+    var label: String {
+        switch self {
+        case .sessions: return "Session List"
+        case .mascot: return "Just the Crab"
+        }
+    }
 }
 
 struct ClaudeWidget: View {
@@ -14,6 +26,14 @@ struct ClaudeWidget: View {
     }
 
     var body: some View {
+        if model[ClaudeKeys.display] == .mascot {
+            ClaudeMascotView(model: model)
+        } else {
+            sessionList
+        }
+    }
+
+    private var sessionList: some View {
         Ticking(everySecond: false) { now in
             Group {
                 if !claude.isInstalled {
@@ -21,7 +41,7 @@ struct ClaudeWidget: View {
                                   title: "Claude Code not found",
                                   detail: "Install Claude Code and run `claude` in Terminal. Sessions will show up here.")
                 } else {
-                    switch model.size {
+                    switch model.family {
                     case .small: small(now)
                     case .medium: list(now, limit: 3)
                     case .large: list(now, limit: 7)
@@ -104,11 +124,11 @@ struct ClaudeWidget: View {
                     .multilineTextAlignment(.center)
             } else {
                 ForEach(sessions.prefix(limit)) { session in
-                    ClaudeSessionRow(session: session, now: now, detailed: model.size == .large)
+                    ClaudeSessionRow(session: session, now: now, detailed: model.family == .large)
                 }
             }
             Spacer(minLength: 0)
-            if model.size == .large && model[ClaudeKeys.showUsage] {
+            if model.family == .large && model[ClaudeKeys.showUsage] {
                 Divider().opacity(0.5)
                 usageFooter
             }

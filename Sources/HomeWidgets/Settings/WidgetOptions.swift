@@ -72,6 +72,7 @@ struct WidgetOptions: View {
             }
         case .claude:
             Section("Claude Code") {
+                OptionPicker("Show", selection: model.binding(ClaudeKeys.display))
                 Toggle("Show today's usage (Large)", isOn: model.binding(ClaudeKeys.showUsage))
                 Toggle("Show finished sessions", isOn: model.binding(ClaudeKeys.showIdle))
                 Text("Reads ~/.claude/projects. Click a session to jump to its terminal, or resume it if it has ended. Right-click a session for more options.")
@@ -126,9 +127,17 @@ struct WidgetOptions: View {
                     .foregroundStyle(.secondary)
             }
         case .photo:
-            Section("Photo") {
-                PathPicker(title: "Photo or folder", path: model.binding(PhotoKeys.path), placeholder: "None", chooseFolders: true, chooseFiles: true)
-                Stepper("Change every \(model[PhotoKeys.minutes]) min (folders)", value: model.binding(PhotoKeys.minutes), in: 1...1440)
+            Section("Photos") {
+                ImageListEditor(paths: model.binding(PhotoKeys.images))
+                PathPicker(title: "Or show a folder", path: model.binding(PhotoKeys.path), placeholder: "None", chooseFolders: true)
+                OptionPicker("Frame", selection: model.binding(PhotoKeys.frame))
+                if model[PhotoKeys.frame] == .polaroid {
+                    TextField("Caption", text: model.binding(PhotoKeys.caption))
+                }
+                Stepper("Next photo every \(model[PhotoKeys.minutes]) min", value: model.binding(PhotoKeys.minutes), in: 1...1440)
+                Text("Tip: drag photos straight onto the widget. Click it to see the next one.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         case .verse:
             Section {
@@ -140,7 +149,294 @@ struct WidgetOptions: View {
                 Text("Calculated on your Mac — no internet needed.")
                     .foregroundStyle(.secondary)
             }
+        default:
+            MoreWidgetOptions(model: model)
         }
+    }
+}
+
+/// Settings for the widgets added in version 2.
+struct MoreWidgetOptions: View {
+    @ObservedObject var model: WidgetModel
+
+    var body: some View {
+        switch model.kind {
+        case .flipClock:
+            Section("Flip Clock") {
+                Toggle("24-hour time", isOn: model.binding(FlipClockKeys.use24Hour))
+                Toggle("Show seconds", isOn: model.binding(FlipClockKeys.showSeconds))
+            }
+        case .sunArc:
+            Section("Sun") {
+                TextField("City", text: model.binding(SunKeys.city), prompt: Text("Current Location"))
+            }
+        case .github:
+            Section("GitHub") {
+                OptionPicker("Show", selection: model.binding(GitHubKeys.section))
+                AccountsLink()
+            }
+        case .contributions, .mail:
+            Section { AccountsLink() }
+        case .cairn:
+            Section("Cairn vault") {
+                TextField("Repo", text: model.binding(CairnKeys.repo), prompt: Text("you/Cairn"))
+                TextField("Only this folder (optional)", text: model.binding(CairnKeys.folder), prompt: Text("All notes"))
+                TextField("Daily notes folder", text: model.binding(CairnKeys.dailyFolder), prompt: Text("Daily"))
+                TextField("Cairn web address (optional)", text: model.binding(CairnKeys.web), prompt: Text("cairn-notes.netlify.app"))
+                Text("With your Cairn address set, clicking a note opens it in Cairn. Otherwise it opens on GitHub.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Quick capture") {
+                OptionPicker("Add notes to", selection: model.binding(CairnKeys.captureTarget))
+                if model[CairnKeys.captureTarget] == .note {
+                    TextField("Note path", text: model.binding(CairnKeys.inbox), prompt: Text("Inbox.md"))
+                }
+                Toggle("Add as to-dos (- [ ])", isOn: model.binding(CairnKeys.asTodo))
+            }
+            Section("Large size shows") {
+                OptionPicker("Content", selection: model.binding(CairnKeys.show))
+                if model[CairnKeys.show] == .pinned {
+                    TextField("Pinned note path", text: model.binding(CairnKeys.pinned), prompt: Text("Projects/Plan.md"))
+                }
+                AccountsLink()
+            }
+        case .news:
+            Section("News Feed") {
+                TextField("Feed address", text: model.binding(NewsKeys.feed))
+                Menu("Suggestions") {
+                    Button("Apple Newsroom") { model.config[NewsKeys.feed] = "https://www.apple.com/newsroom/rss-feed.rss" }
+                    Button("The Verge") { model.config[NewsKeys.feed] = "https://www.theverge.com/rss/index.xml" }
+                    Button("9to5Mac") { model.config[NewsKeys.feed] = "https://9to5mac.com/feed/" }
+                    Button("NASA") { model.config[NewsKeys.feed] = "https://www.nasa.gov/feed/" }
+                    Button("Anthropic News") { model.config[NewsKeys.feed] = "https://www.anthropic.com/news/rss.xml" }
+                    Button("GitHub Blog") { model.config[NewsKeys.feed] = "https://github.blog/feed/" }
+                }
+            }
+        case .stocks:
+            Section("Stocks") { SymbolListEditor(symbols: model.binding(QuoteKeys.stocks), placeholder: "AAPL") }
+        case .crypto:
+            Section("Crypto") { SymbolListEditor(symbols: model.binding(QuoteKeys.crypto), placeholder: "BTC-USD") }
+        case .currency:
+            Section("Currency") {
+                TextField("From", text: model.binding(CurrencyKeys.base), prompt: Text("USD"))
+                SymbolListEditor(symbols: model.binding(CurrencyKeys.targets), placeholder: "EUR")
+                TextField("Amount", value: model.binding(CurrencyKeys.amount), format: .number)
+            }
+        case .sports:
+            Section("Sports") {
+                OptionPicker("League", selection: model.binding(SportsKeys.league))
+                TextField("Only my team (optional)", text: model.binding(SportsKeys.team), prompt: Text("e.g. DAL"))
+            }
+        case .uptime:
+            Section("Websites") { SymbolListEditor(symbols: model.binding(UptimeKeys.sites), placeholder: "example.com", uppercase: false) }
+        case .serviceStatus:
+            Section("Services") {
+                ForEach(StatusPage.all) { page in
+                    Toggle(page.name, isOn: Binding(
+                        get: { model[ServiceStatusKeys.services].contains(page.id) },
+                        set: { on in
+                            var list = model[ServiceStatusKeys.services].filter { $0 != page.id }
+                            if on { list.append(page.id) }
+                            model.config[ServiceStatusKeys.services] = list
+                        }))
+                }
+            }
+        case .todo:
+            Section("To-Do") {
+                Button("Clear All Tasks", role: .destructive) { model.config[TodoKeys.items] = [] }
+            }
+        case .habits:
+            Section("Habits") {
+                SymbolListEditor(symbols: model.binding(HabitKeys.habits), placeholder: "New habit", uppercase: false)
+                Button("Reset History", role: .destructive) { model.config[HabitKeys.log] = [] }
+            }
+        case .links:
+            Section("Links") {
+                SymbolListEditor(symbols: model.binding(LinkKeys.links), placeholder: "Name|https://example.com", uppercase: false)
+                Text("Write each link as Name|address, for example YouTube|youtube.com")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .counter:
+            Section("Counter") {
+                TextField("Title", text: model.binding(CounterKeys.title))
+                Stepper("Goal: \(model[CounterKeys.goal] == 0 ? "none" : String(model[CounterKeys.goal]))", value: model.binding(CounterKeys.goal), in: 0...10_000)
+                Toggle("Reset every day", isOn: model.binding(CounterKeys.resetsDaily))
+                Button("Reset to 0") { model.config[CounterKeys.count] = 0 }
+            }
+        case .sticker:
+            Section("Sticker") {
+                ImagePickerRow(title: "Image", path: model.binding(StickerKeys.image))
+                Toggle("Fill the whole widget", isOn: model.binding(StickerKeys.fill))
+                Toggle("Rounded corners", isOn: model.binding(StickerKeys.rounded))
+                Text("PNGs with transparent backgrounds look best: they float right on your wallpaper. You can also drag an image onto the sticker.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .text:
+            Section("Text") {
+                TextEditor(text: model.binding(TextKeys.text)).frame(minHeight: 60)
+                OptionPicker("Font", selection: model.binding(TextKeys.font))
+                OptionPicker("Color", selection: model.binding(TextKeys.color))
+                OptionPicker("Alignment", selection: model.binding(TextKeys.alignment))
+                Slider(value: model.binding(TextKeys.size), in: 12...72, step: 1) { Text("Size") }
+            }
+        case .crabPet:
+            Section("Claude Crab") {
+                TextField("Name", text: model.binding(CrabPetKeys.name))
+                Toggle("React to Claude Code sessions", isOn: model.binding(CrabPetKeys.reactsToClaude))
+            }
+        case .lavaLamp:
+            Section("Lava Lamp") { OptionPicker("Colors", selection: model.binding(LavaKeys.theme)) }
+        case .moodGradient:
+            Section("Mood Gradient") { OptionPicker("Palette", selection: model.binding(MoodKeys.palette)) }
+        case .bounce:
+            Section("Bouncing Text") { TextField("Text", text: model.binding(BounceKeys.text)) }
+        case .plant:
+            Section("Pixel Plant") {
+                TextField("Name", text: model.binding(PlantKeys.name))
+                Text("Water it once a day. Miss two days and it starts to wilt.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        default:
+            Section {
+                Text(model.kind.summary).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Every widget can have its own background photo.
+struct BackgroundImageSection: View {
+    @ObservedObject var model: WidgetModel
+
+    var body: some View {
+        Section("Background Photo") {
+            ImagePickerRow(title: "Photo", path: model.binding(BackgroundKeys.image))
+            if !model[BackgroundKeys.image].isEmpty {
+                Slider(value: model.binding(BackgroundKeys.dim), in: 0...0.8) { Text("Darken") }
+                Slider(value: model.binding(BackgroundKeys.blur), in: 0...30) { Text("Blur") }
+            }
+        }
+    }
+}
+
+struct AccountsLink: View {
+    var body: some View {
+        Button("Open Accounts…") { AppController.shared.showSettings(pane: .accounts) }
+    }
+}
+
+/// Choose, paste or remove one stored image.
+struct ImagePickerRow: View {
+    let title: String
+    @Binding var path: String
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack {
+                if let image = ImageStore.image(at: path, maxPixel: 80) {
+                    Image(nsImage: image).resizable().scaledToFill().frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                Button("Choose…") {
+                    ImageStore.choose(multiple: false) { paths in
+                        if let first = paths.first { replace(with: first) }
+                    }
+                }
+                Button("Paste") {
+                    if let stored = ImageStore.importFromPasteboard() { replace(with: stored) } else { NSSound.beep() }
+                }
+                if !path.isEmpty {
+                    Button("Remove") { replace(with: "") }
+                }
+            }
+        }
+    }
+
+    private func replace(with newPath: String) {
+        let old = path
+        path = newPath
+        if !old.isEmpty && old != newPath { ImageStore.removeIfStored(old) }
+    }
+}
+
+/// A list of stored images with add/remove.
+struct ImageListEditor: View {
+    @Binding var paths: [String]
+
+    var body: some View {
+        if !paths.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(paths, id: \.self) { path in
+                        ZStack(alignment: .topTrailing) {
+                            if let image = ImageStore.image(at: path, maxPixel: 160) {
+                                Image(nsImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            Button {
+                                paths.removeAll { $0 == path }
+                                ImageStore.removeIfStored(path)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(Color.white, Color.black.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(3)
+                        }
+                    }
+                }
+            }
+        }
+        HStack {
+            Button("Add Photos…") {
+                ImageStore.choose(multiple: true) { added in paths += added }
+            }
+            Button("Paste") {
+                if let stored = ImageStore.importFromPasteboard() { paths.append(stored) } else { NSSound.beep() }
+            }
+            if !paths.isEmpty {
+                Text("\(paths.count) photo\(paths.count == 1 ? "" : "s")").foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Editable list of short strings (stock symbols, websites, habits…).
+struct SymbolListEditor: View {
+    @Binding var symbols: [String]
+    var placeholder: String
+    var uppercase = true
+    @State private var draft = ""
+
+    var body: some View {
+        ForEach(Array(symbols.enumerated()), id: \.offset) { index, symbol in
+            HStack {
+                Text(symbol)
+                Spacer()
+                Button {
+                    symbols.remove(at: index)
+                } label: {
+                    Image(systemName: "minus.circle.fill").foregroundStyle(Color.red)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .onMove { symbols.move(fromOffsets: $0, toOffset: $1) }
+        HStack {
+            TextField("Add", text: $draft, prompt: Text(placeholder))
+                .onSubmit(add)
+            Button("Add", action: add).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    private func add() {
+        var value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if uppercase { value = value.uppercased() }
+        guard !value.isEmpty, !symbols.contains(value) else { return }
+        symbols.append(value)
+        draft = ""
     }
 }
 

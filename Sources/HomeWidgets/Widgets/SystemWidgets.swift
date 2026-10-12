@@ -56,7 +56,7 @@ struct CPUWidget: View {
 
     var body: some View {
         Group {
-            switch model.size {
+            switch model.family {
             case .small: small
             case .medium: medium
             case .large: large.monitoring(ProcessMonitor.shared)
@@ -143,7 +143,7 @@ struct GPUWidget: View {
             if !gpu.isAvailable {
                 WidgetMessage(symbol: "cube", title: "GPU stats unavailable")
             } else {
-                switch model.size {
+                switch model.family {
                 case .small: small
                 case .medium: medium
                 case .large: large
@@ -258,7 +258,7 @@ struct MemoryWidget: View {
 
     var body: some View {
         Group {
-            switch model.size {
+            switch model.family {
             case .small: small
             case .medium: medium
             case .large: large.monitoring(ProcessMonitor.shared)
@@ -359,7 +359,7 @@ struct StorageWidget: View {
     var body: some View {
         Group {
             if let startup = storage.startup {
-                switch model.size {
+                switch model.family {
                 case .small: small(startup)
                 case .medium: list(limit: 3)
                 case .large: list(limit: 7)
@@ -436,7 +436,7 @@ struct NetworkWidget: View {
 
     var body: some View {
         Group {
-            switch model.size {
+            switch model.family {
             case .small: small
             case .medium: medium
             case .large: large
@@ -544,7 +544,7 @@ struct SystemStatsWidget: View {
 
     var body: some View {
         Group {
-            switch model.size {
+            switch model.family {
             case .small: small
             case .medium: medium
             case .large: large.monitoring(BatteryMonitor.shared)
@@ -653,7 +653,7 @@ struct BatteryWidget: View {
             if !battery.hasBattery {
                 WidgetMessage(symbol: "powerplug.fill", title: "No battery", detail: "This Mac runs on power adapter only.")
             } else {
-                switch model.size {
+                switch model.family {
                 case .small, .large: small
                 case .medium: medium
                 }
@@ -787,7 +787,7 @@ struct TopProcessesWidget: View {
         VStack(alignment: .leading, spacing: 10) {
             WidgetHeader(title: "Top Processes", symbol: "list.bullet.rectangle", color: .gray,
                          trailing: sort == .cpu ? "by CPU" : "by Memory")
-            ProcessList(entries: Array(entries.prefix(model.size == .large ? 10 : 4)), metric: sort)
+            ProcessList(entries: Array(entries.prefix(model.family == .large ? 10 : 4)), metric: sort)
             Spacer(minLength: 0)
         }
         .widgetPadding()
@@ -803,7 +803,7 @@ struct SystemInfoWidget: View {
 
     var body: some View {
         Ticking(everySecond: false) { now in
-            switch model.size {
+            switch model.family {
             case .small, .large: small(now)
             case .medium: medium(now)
             }

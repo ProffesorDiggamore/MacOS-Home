@@ -21,7 +21,7 @@ struct RemindersWidget: View {
 
     @ViewBuilder
     private var content: some View {
-        let limit = model.size == .large ? 10 : (model.size == .medium ? 4 : 3)
+        let limit = model.family == .large ? 10 : (model.family == .medium ? 4 : 3)
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Image(systemName: "list.bullet.circle.fill")
@@ -49,7 +49,7 @@ struct RemindersWidget: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(reminders.prefix(limit)) { reminder in
-                    ReminderRow(reminder: reminder, compact: model.size == .small) {
+                    ReminderRow(reminder: reminder, compact: model.family == .small) {
                         if !isSample { service.complete(reminder.id) }
                     }
                 }
@@ -212,7 +212,7 @@ struct FocusTimerWidget: View {
 
     var body: some View {
         Group {
-            switch model.size {
+            switch model.family {
             case .small, .large: small
             case .medium: medium
             }
@@ -434,7 +434,7 @@ struct WeatherWidget: View {
 
     @ViewBuilder
     private func content(_ report: WeatherReport) -> some View {
-        switch model.size {
+        switch model.family {
         case .small:
             currentBlock(report, large: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
