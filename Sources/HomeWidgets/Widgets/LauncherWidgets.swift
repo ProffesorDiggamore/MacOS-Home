@@ -67,7 +67,7 @@ struct AppShortcutsWidget: View {
                                 let index = row * columns + column
                                 if index < visible.count {
                                     AppTile(path: visible[index], iconSize: iconSize, showLabel: showLabels,
-                                            isRunning: running.paths.contains(visible[index]))
+                                            isRunning: running.isRunning(visible[index]))
                                 } else {
                                     Color.clear.frame(width: iconSize, height: iconSize)
                                 }

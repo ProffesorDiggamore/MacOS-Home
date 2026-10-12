@@ -111,9 +111,20 @@ final class IconCache {
 
     func icon(forPath path: String) -> NSImage {
         if let cached = icons[path] { return cached }
-        let icon = NSWorkspace.shared.icon(forFile: path)
+        // Resolve symlinks (e.g. /Applications/Safari.app) so icons don't get an alias arrow.
+        let icon = NSWorkspace.shared.icon(forFile: Self.resolved(path))
         icons[path] = icon
         return icon
+    }
+
+    private static var resolvedPaths: [String: String] = [:]
+
+    /// The real location of a path with symlinks followed (cached).
+    static func resolved(_ path: String) -> String {
+        if let cached = resolvedPaths[path] { return cached }
+        let real = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        resolvedPaths[path] = real
+        return real
     }
 
     func invalidate(_ path: String) {
@@ -138,7 +149,11 @@ final class RunningApps: ObservableObject {
     }
 
     private func update() {
-        paths = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path })
+        paths = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.resolvingSymlinksInPath().path })
+    }
+
+    func isRunning(_ appPath: String) -> Bool {
+        paths.contains(IconCache.resolved(appPath))
     }
 }
 

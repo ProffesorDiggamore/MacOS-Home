@@ -47,5 +47,18 @@ shot 3-solid-light "style solid" "scheme light"
 shot 4-tinted "style tinted" "scheme system" "accent purple"
 shot 5-liquid-dark "style liquidGlass" "scheme dark" "accent system"
 
+# 6–8. Every widget kind, laid out on a grid, in the default frosted-glass look.
+defaults delete "$DOMAIN" >/dev/null 2>&1 || true
+WIDTH=$(sips -g pixelWidth "$OUT/2-glass.png" | awk '/pixelWidth/ {print $2}')
+HEIGHT=$(sips -g pixelHeight "$OUT/2-glass.png" | awk '/pixelHeight/ {print $2}')
+if [[ "$WIDTH" -gt 2000 ]]; then WIDTH=$((WIDTH / 2)); HEIGHT=$((HEIGHT / 2)); fi
+LAYOUT="$HOME/Library/Application Support/HomeWidgets/widgets.json"
+for set in 1 2 3; do
+  python3 scripts/layout-sets.py "$set" "$WIDTH" "$HEIGHT" "$LAYOUT"
+  launch 12
+  screencapture -x "$OUT/$((5 + set))-all-widgets-$set.png"
+  quit
+done
+
 defaults delete "$DOMAIN" >/dev/null 2>&1 || true
 echo "✓ Smoke test passed; screenshots in $OUT"
