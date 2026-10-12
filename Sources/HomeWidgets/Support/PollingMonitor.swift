@@ -91,4 +91,9 @@ extension View {
     func monitoring(_ monitors: PollingMonitor...) -> some View {
         modifier(MonitorSubscription(monitors: monitors))
     }
+
+    /// Like `monitoring`, but only when `condition` is true (e.g. not in gallery previews).
+    func monitoring(if condition: Bool, _ monitors: PollingMonitor...) -> some View {
+        modifier(MonitorSubscription(monitors: condition ? monitors : []))
+    }
 }

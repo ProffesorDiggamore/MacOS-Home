@@ -67,11 +67,23 @@ struct GalleryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Widget Gallery")
-                        .font(.largeTitle.bold())
-                    Text("Add widgets to your desktop. Drag them anywhere, right-click one to resize or edit it.")
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Widget Gallery")
+                            .font(.largeTitle.bold())
+                        Text("Add widgets to your desktop. Drag them anywhere, right-click one to resize or edit it.")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 16)
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Search widgets", text: $search)
+                            .textFieldStyle(.plain)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+                    .frame(width: 220)
                 }
                 ForEach(WidgetCategory.allCases) { category in
                     let kinds = WidgetKind.allCases.filter { $0.category == category && matches($0) }
@@ -90,7 +102,6 @@ struct GalleryView: View {
             }
             .padding(24)
         }
-        .searchable(text: $search, placement: .toolbar, prompt: "Search widgets")
     }
 }
 

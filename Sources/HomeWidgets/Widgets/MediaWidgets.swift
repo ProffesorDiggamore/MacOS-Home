@@ -23,7 +23,7 @@ struct NowPlayingWidget: View {
                               detail: player.errorMessage == nil ? "Play something in Music or Spotify." : "Allow Home Widgets to control Music/Spotify in System Settings › Privacy › Automation.")
             }
         }
-        .monitoring(NowPlayingService.shared)
+        .monitoring(if: !isSample, NowPlayingService.shared)
     }
 
     private var artwork: some View {
