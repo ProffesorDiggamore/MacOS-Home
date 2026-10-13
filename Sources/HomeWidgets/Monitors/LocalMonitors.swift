@@ -1,3 +1,4 @@
+import AudioToolbox
 import AppKit
 import IOKit
 import CoreWLAN
@@ -54,49 +55,135 @@ final class ClipboardMonitor: PollingMonitor {
 
 // MARK: - Volume
 
-final class VolumeMonitor: PollingMonitor {
-    static let shared = VolumeMonitor()
-
+/// Volume and mute for the default output (or input) device, straight from Core Audio.
+/// Changes arrive as notifications, so nothing runs while the volume isn't changing.
+class DeviceVolumeMonitor: PollingMonitor {
+    let isInput: Bool
     @Published private(set) var volume: Double = 0.5
     @Published private(set) var isMuted = false
-    private let queue = DispatchQueue(label: "HomeWidgets.volume", qos: .userInitiated)
+    @Published private(set) var deviceName = ""
+    /// False for devices without software volume (HDMI, some USB interfaces).
+    @Published private(set) var hasVolume = true
+    private var listeners: [AudioSystem.Listener] = []
     private var lastSet = Date.distantPast
 
-    override var interval: TimeInterval { 2 }
+    init(input: Bool) {
+        isInput = input
+        super.init()
+    }
+
+    /// A slow safety net; Core Audio tells us about real changes immediately.
+    override var interval: TimeInterval { 30 }
 
     override func sample() {
-        // Don't fight the slider while the user is dragging it.
-        guard Date().timeIntervalSince(lastSet) > 1.5 else { return }
-        queue.async { [weak self] in
-            let (result, _) = Shell.runAppleScriptNow("set s to (get volume settings)\nreturn {output volume of s, output muted of s}")
-            guard let result, result.numberOfItems >= 2 else { return }
-            let level = Double(result.atIndex(1)?.int32Value ?? 50) / 100
-            let muted = result.atIndex(2)?.booleanValue ?? false
+        if listeners.isEmpty { attach() }
+        read()
+    }
+
+    override func didStop() {
+        listeners = []
+    }
+
+    private func attach() {
+        var list: [AudioSystem.Listener] = []
+        let selector = isInput ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice
+        if let device = AudioSystem.Listener(object: AudioSystem.systemObject, selector: selector, handler: { [weak self] in
+            // Re-attach outside the callback that's running right now.
             DispatchQueue.main.async {
-                guard let self else { return }
-                if abs(self.volume - level) > 0.005 { self.volume = level }
-                if self.isMuted != muted { self.isMuted = muted }
+                self?.listeners = []
+                self?.attach()
+                self?.read()
+            }
+        }) { list.append(device) }
+        if let id = AudioSystem.defaultDevice(input: isInput) {
+            let scope = isInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput
+            for selector in [kAudioHardwareServiceDeviceProperty_VirtualMainVolume, kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyMute] {
+                if let listener = AudioSystem.Listener(object: id, selector: selector, scope: scope, handler: { [weak self] in self?.read() }) {
+                    list.append(listener)
+                }
             }
         }
+        listeners = list
+    }
+
+    private func read() {
+        guard let id = AudioSystem.defaultDevice(input: isInput) else { return }
+        let name = AudioSystem.name(of: id) ?? ""
+        if deviceName != name { deviceName = name }
+        // Don't fight the slider while the user is dragging it.
+        if Date().timeIntervalSince(lastSet) > 0.6 {
+            if let level = AudioSystem.volume(of: id, input: isInput) {
+                if abs(volume - level) > 0.004 { volume = level }
+                if !hasVolume { hasVolume = true }
+            } else if hasVolume {
+                hasVolume = false
+            }
+        }
+        let muted = AudioSystem.isMuted(id, input: isInput)
+        if isMuted != muted { isMuted = muted }
     }
 
     func set(_ level: Double) {
         volume = min(1, max(0, level))
         lastSet = Date()
-        let percent = Int((volume * 100).rounded())
-        queue.async {
-            _ = Shell.runAppleScriptNow("set volume output volume \(percent) without output muted")
+        guard let id = AudioSystem.defaultDevice(input: isInput) else { return }
+        AudioSystem.setVolume(volume, of: id, input: isInput)
+        if isMuted {
+            AudioSystem.setMuted(false, id, input: isInput)
+            isMuted = false
         }
-        if isMuted { isMuted = false }
     }
 
     func toggleMute() {
+        guard let id = AudioSystem.defaultDevice(input: isInput) else { return }
         isMuted.toggle()
-        lastSet = Date()
-        let muted = isMuted
-        queue.async {
-            _ = Shell.runAppleScriptNow("set volume output muted \(muted)")
+        AudioSystem.setMuted(isMuted, id, input: isInput)
+    }
+}
+
+final class VolumeMonitor: DeviceVolumeMonitor {
+    static let shared = VolumeMonitor()
+    private init() { super.init(input: false) }
+}
+
+final class MicrophoneMonitor: DeviceVolumeMonitor {
+    static let shared = MicrophoneMonitor()
+    private init() { super.init(input: true) }
+}
+
+/// The list of speakers, headphones and microphones, kept current by Core Audio.
+final class AudioDevicesMonitor: PollingMonitor {
+    static let shared = AudioDevicesMonitor()
+    @Published private(set) var devices: [AudioSystem.Device] = []
+    @Published private(set) var output: AudioDeviceID?
+    @Published private(set) var input: AudioDeviceID?
+    private var listeners: [AudioSystem.Listener] = []
+
+    override var interval: TimeInterval { 60 }
+
+    override func sample() {
+        if listeners.isEmpty {
+            let reload: () -> Void = { [weak self] in self?.read() }
+            listeners = [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDefaultInputDevice]
+                .compactMap { AudioSystem.Listener(object: AudioSystem.systemObject, selector: $0, handler: reload) }
         }
+        read()
+    }
+
+    override func didStop() { listeners = [] }
+
+    private func read() {
+        let list = AudioSystem.devices()
+        if list != devices { devices = list }
+        let out = AudioSystem.defaultDevice(input: false)
+        let inp = AudioSystem.defaultDevice(input: true)
+        if output != out { output = out }
+        if input != inp { input = inp }
+    }
+
+    func select(_ id: AudioDeviceID, input: Bool) {
+        AudioSystem.setDefault(id, input: input)
+        read()
     }
 }
 

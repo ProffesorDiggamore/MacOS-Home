@@ -304,6 +304,8 @@ final class CairnService: ObservableObject {
         var todayText: String?
         var error: String?
         var updated: Date?
+        /// Anyone on the internet can read this repo.
+        var isPublic = false
     }
 
     @Published private(set) var vaults: [String: Vault] = [:]
@@ -411,30 +413,48 @@ final class CairnService: ObservableObject {
         let key = "\(repo)|\(folder)|\(pinned)|\(dailyFolder)"
         if !force, let last = lastRefresh[key], Date().timeIntervalSince(last) < 300 { return }
         lastRefresh[key] = Date()
-        loadRecent(repo: repo, folder: folder, token: token)
-        loadCount(repo: repo, folder: folder, token: token)
+        loadNotes(repo: repo, folder: folder, token: token)
+        loadVisibility(repo: repo, token: token)
         if !pinned.isEmpty {
-            loadText(repo: repo, path: pinned, token: token) { [weak self] text in
+            loadText(repo: repo, path: Self.inVault(pinned, folder: folder), token: token) { [weak self] text in
                 self?.vaults[repo, default: Vault()].pinnedText = text.map(Self.body) ?? "Pinned note not found: \(pinned)"
             }
         }
-        loadText(repo: repo, path: Self.dailyPath(folder: dailyFolder), token: token) { [weak self] text in
+        loadText(repo: repo, path: Self.inVault(Self.dailyPath(folder: dailyFolder), folder: folder), token: token) { [weak self] text in
             self?.vaults[repo, default: Vault()].todayText = text.map(Self.body)
         }
     }
 
-    private func loadRecent(repo: String, folder: String, token: String) {
-        var path = "/repos/\(repo)/commits?per_page=15"
-        if !folder.isEmpty { path += "&path=" + (folder.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? folder) }
-        github.get(path, token: token) { [weak self] json, status in
+    /// The notes that exist *right now* (the branch's current file tree), ordered by when commits last
+    /// touched them. Version 2 listed files straight from commit history, so notes deleted or moved
+    /// in Cairn kept showing up in the widget.
+    private func loadNotes(repo: String, folder: String, token: String) {
+        let prefix = Self.folderPrefix(folder)
+        github.get("/repos/\(repo)/git/trees/HEAD?recursive=1", token: token) { [weak self] json, status in
             guard let self else { return }
-            guard status == 200, let commits = json as? [[String: Any]] else {
-                self.vaults[repo, default: Vault()].error = status == 404
-                    ? "Repo not found. Check the name and that your token can read it."
+            guard status == 200, let tree = (json as? [String: Any])?["tree"] as? [[String: Any]] else {
+                self.vaults[repo, default: Vault()].error = status == 404 || status == 409
+                    ? "Repo not found or empty. Check the name and that your token can read it."
                     : (status == 401 ? "GitHub rejected the token. Paste a new one in Accounts." : "Couldn't load notes (status \(status)).")
                 return
             }
             self.vaults[repo, default: Vault()].error = nil
+            let existing = Set(tree.compactMap { entry -> String? in
+                guard let path = entry["path"] as? String, (entry["type"] as? String) == "blob",
+                      path.hasPrefix(prefix), Self.isNote(String(path.dropFirst(prefix.count))) else { return nil }
+                return path
+            })
+            self.vaults[repo, default: Vault()].noteCount = existing.count
+            self.loadRecent(repo: repo, prefix: prefix, existing: existing, token: token)
+        }
+    }
+
+    private func loadRecent(repo: String, prefix: String, existing: Set<String>, token: String) {
+        var path = "/repos/\(repo)/commits?per_page=12"
+        if !prefix.isEmpty { path += "&path=" + (String(prefix.dropLast()).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? prefix) }
+        github.get(path, token: token) { [weak self] json, status in
+            guard let self else { return }
+            let commits = (status == 200 ? json as? [[String: Any]] : nil) ?? []
             var dates: [String: Date] = [:]
             var shas: [String] = []
             for commit in commits {
@@ -461,11 +481,16 @@ final class CairnService: ObservableObject {
                 for sha in shas {
                     for file in details[sha] ?? [] {
                         guard let name = file["filename"] as? String,
-                              Self.isNote(name),
-                              (file["status"] as? String) != "removed",
-                              folder.isEmpty || name.hasPrefix(folder),
+                              existing.contains(name),
                               seen.insert(name).inserted else { continue }
                         collected.append(Note(path: name, updated: dates[sha], icon: self.icons[name]))
+                    }
+                }
+                // Quiet repo (or notes older than the last few commits): fill up from the tree.
+                if collected.count < 10 {
+                    for name in existing.sorted() where !seen.contains(name) {
+                        collected.append(Note(path: name, updated: nil, icon: self.icons[name]))
+                        if collected.count >= 10 { break }
                     }
                 }
                 let recent = Array(collected.prefix(10))
@@ -474,6 +499,24 @@ final class CairnService: ObservableObject {
                 self.loadIcons(repo: repo, notes: recent, token: token)
             }
         }
+    }
+
+    private func loadVisibility(repo: String, token: String) {
+        github.get("/repos/\(repo)", token: token) { [weak self] json, status in
+            guard let self, status == 200, let object = json as? [String: Any] else { return }
+            self.vaults[repo, default: Vault()].isPublic = (object["private"] as? Bool) == false
+        }
+    }
+
+    /// A note path inside the vault folder (Cairn's "Folder in the repo" setting).
+    static func inVault(_ path: String, folder: String) -> String {
+        let prefix = folderPrefix(folder)
+        return path.hasPrefix(prefix) ? path : prefix + path
+    }
+
+    static func folderPrefix(_ folder: String) -> String {
+        let clean = folder.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        return clean.isEmpty ? "" : clean + "/"
     }
 
     /// Reads each recent note's frontmatter so the widget can show its emoji icon.
@@ -491,17 +534,6 @@ final class CairnService: ObservableObject {
                 }
                 self.vaults[repo] = vault
             }
-        }
-    }
-
-    private func loadCount(repo: String, folder: String, token: String) {
-        github.get("/repos/\(repo)/git/trees/HEAD?recursive=1", token: token) { [weak self] json, status in
-            guard let self, status == 200, let tree = (json as? [String: Any])?["tree"] as? [[String: Any]] else { return }
-            let count = tree.filter {
-                guard let path = $0["path"] as? String, ($0["type"] as? String) == "blob" else { return false }
-                return Self.isNote(path) && (folder.isEmpty || path.hasPrefix(folder))
-            }.count
-            self.vaults[repo, default: Vault()].noteCount = count
         }
     }
 
@@ -559,14 +591,18 @@ final class CairnService: ObservableObject {
     // MARK: Opening
 
     /// Opens a note in your Cairn web app (if you set its address) or on GitHub.
-    func open(path: String?, repo rawRepo: String, webAddress: String) {
+    func open(path: String?, repo rawRepo: String, webAddress: String, folder: String = "") {
         let repo = Self.normalize(rawRepo)
+        let prefix = Self.folderPrefix(folder)
         let site = webAddress.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if !site.isEmpty {
             let base = site.contains("://") ? site : "https://" + site
             var allowed = CharacterSet.alphanumerics
             allowed.insert(charactersIn: "-_.!~*'()")
-            let hash = path.map { "#/note/" + ($0.addingPercentEncoding(withAllowedCharacters: allowed) ?? $0) } ?? "#/"
+            let hash = path.map { full -> String in
+                let inApp = !prefix.isEmpty && full.hasPrefix(prefix) ? String(full.dropFirst(prefix.count)) : full
+                return "#/note/" + (inApp.addingPercentEncoding(withAllowedCharacters: allowed) ?? inApp)
+            } ?? "#/"
             if let url = URL(string: base + "/" + hash) {
                 NSWorkspace.shared.open(url)
                 return

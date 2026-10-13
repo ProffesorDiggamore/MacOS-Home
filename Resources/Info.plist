@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.0</string>
+	<string>3.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>3</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -39,17 +39,17 @@
 	<key>NSRemindersUsageDescription</key>
 	<string>Home Widgets shows your reminders and lets you check them off.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>Home Widgets uses your approximate location to show local weather.</string>
+	<string>Home Widgets uses your approximate location to show local weather and air quality.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Home Widgets uses your approximate location to show local weather.</string>
+	<string>Home Widgets uses your approximate location to show local weather and air quality.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Home Widgets controls Music, Spotify and system appearance for the Now Playing and Quick Actions widgets.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>Home Widgets lists your recent downloads in the Folder widget.</string>
+	<string>Home Widgets lists your recent downloads in the Folder and Recent Files widgets.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>Home Widgets lists files from the folder you choose in the Folder widget.</string>
+	<string>Home Widgets lists files you recently changed in the Recent Files and Folder widgets.</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>Home Widgets lists files from the folder you choose in the Folder widget.</string>
+	<string>Home Widgets shows your latest screenshots and recent files in their widgets.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Home Widgets shows a photo you choose in the Photo widget.</string>
 </dict>

@@ -68,6 +68,10 @@ struct PhotoWidget: View {
     }
 
     private func background(frame: PhotoFrame) -> CustomBackground? {
+        // A cut-out or transparent PNG floats on the wallpaper instead of sitting in a box.
+        if frame == .fill, let first = sources.first, sources.count == 1, ImageStore.hasTransparency(first) {
+            return .edgeToEdge
+        }
         if context == .gallery || !sources.isEmpty {
             switch frame {
             case .fill: return .edgeToEdge
@@ -101,7 +105,8 @@ struct PhotoWidget: View {
     @ViewBuilder
     private func picture(_ image: NSImage?) -> some View {
         if let image {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+            let floating = sources.count == 1 && sources.first.map(ImageStore.hasTransparency) == true
+            Image(nsImage: image).resizable().aspectRatio(contentMode: floating ? .fit : .fill)
         } else {
             samplePhoto
         }
@@ -152,6 +157,54 @@ enum StickerKeys {
     static let image = ConfigKey("image", "")
     static let fill = ConfigKey("fill", false)
     static let rounded = ConfigKey("rounded", false)
+    /// Cut the subject out of photos that have a background.
+    static let autoCutout = ConfigKey("autoCutout", true)
+    /// The image as you added it, kept so you can undo the cut-out.
+    static let original = ConfigKey("original", "")
+    /// The last image we already looked at, so we never cut out twice.
+    static let checked = ConfigKey("checked", "")
+}
+
+/// Turns a sticker's photo into a cut-out once, in the background.
+@MainActor
+enum StickerCutout {
+    static var working = Set<UUID>()
+
+    static func run(_ model: WidgetModel, force: Bool = false) {
+        let path = model[StickerKeys.image]
+        guard !path.isEmpty, !working.contains(model.id) else { return }
+        guard force || (model[StickerKeys.autoCutout] && model[StickerKeys.checked] != path) else { return }
+        if !force && ImageStore.hasTransparency(path) {
+            model.config[StickerKeys.checked] = path // already a cut-out: leave it alone
+            return
+        }
+        working.insert(model.id)
+        model.objectWillChange.send()
+        Task { @MainActor in
+            let cut = await ImageStore.cutOutSubject(path)
+            working.remove(model.id)
+            guard model[StickerKeys.image] == path else { return } // replaced meanwhile
+            if let cut {
+                let original = model[StickerKeys.original]
+                if original.isEmpty || original != path { model.config[StickerKeys.original] = path }
+                model.config[StickerKeys.image] = cut
+                model.config[StickerKeys.checked] = cut
+            } else {
+                model.config[StickerKeys.checked] = path
+                model.objectWillChange.send()
+            }
+        }
+    }
+
+    static func restoreOriginal(_ model: WidgetModel) {
+        let original = model[StickerKeys.original]
+        guard !original.isEmpty, FileManager.default.fileExists(atPath: original) else { return }
+        let cut = model[StickerKeys.image]
+        model.config[StickerKeys.image] = original
+        model.config[StickerKeys.checked] = original
+        model.config[StickerKeys.original] = ""
+        if cut != original { ImageStore.removeIfStored(cut) }
+    }
 }
 
 /// An image floating on the desktop with no widget box (PNGs with transparency look great).
@@ -196,6 +249,16 @@ struct StickerWidget: View {
                 RoundedRectangle(cornerRadius: Layout.cornerRadius, style: .continuous)
                     .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
             }
+            if StickerCutout.working.contains(model.id) {
+                Label("Removing background…", systemImage: "wand.and.stars")
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(.ultraThinMaterial))
+            }
+        }
+        .task(id: path) {
+            if context == .desktop { StickerCutout.run(model) }
         }
         .onDrop(of: [.fileURL, .image], isTargeted: $dropTargeted) { providers in
             ImageStore.importDrop(providers) { paths in
@@ -215,8 +278,11 @@ struct StickerWidget: View {
 
     private func replaceImage(with newPath: String) {
         let old = model[StickerKeys.image]
+        let original = model[StickerKeys.original]
         model.config[StickerKeys.image] = newPath
+        model.config[StickerKeys.original] = ""
         if !old.isEmpty && old != newPath { ImageStore.removeIfStored(old) }
+        if !original.isEmpty && original != newPath { ImageStore.removeIfStored(original) }
     }
 }
 

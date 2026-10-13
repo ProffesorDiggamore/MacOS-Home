@@ -23,6 +23,7 @@ final class AppController: NSObject, NSMenuDelegate {
             installDefaultWidgets()
         }
         applyAppPresence()
+        tidyOntoGrid()
         syncPanels(store.widgets)
 
         store.$widgets
@@ -42,6 +43,11 @@ final class AppController: NSObject, NSMenuDelegate {
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.screensChanged() }
+            .store(in: &cancellables)
+
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.panels.values.forEach { $0.spaceChanged() } }
             .store(in: &cancellables)
 
         if showWindow || !hadSavedWidgets {
@@ -88,10 +94,11 @@ final class AppController: NSObject, NSMenuDelegate {
     func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) -> WidgetModel {
         let chosen = size ?? kind.defaultSize
         let screen = NSScreen.main ?? NSScreen.screens.first
-        let bounds = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let grid = DesktopGrid(bounds: screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
         let occupied = store.widgets.map(\.frame)
-        let topLeft = Placement.freeTopLeft(for: chosen.dimensions, in: bounds, occupied: occupied)
-        let model = WidgetModel(kind: kind, size: chosen, topLeft: topLeft)
+        let rect = grid.firstFree(size: chosen, occupied: occupied).map { grid.rect(at: $0, size: chosen) }
+            ?? DesktopGrid.place(grid.rect(at: .init(column: 0, row: 0), size: chosen), size: chosen, occupied: occupied)
+        let model = WidgetModel(kind: kind, size: chosen, topLeft: CGPoint(x: rect.minX, y: rect.maxY))
         applyInitialConfig(to: model)
         store.add(model)
         if appearance.hidden {
@@ -128,16 +135,32 @@ final class AppController: NSObject, NSMenuDelegate {
         store.widgets.filter { $0.id != id }.map(\.frame)
     }
 
+    /// Packs every widget into the grid from the top-left, biggest first so nothing gets stranded.
     func arrangeWidgets() {
         let screen = NSScreen.main ?? NSScreen.screens.first
-        let bounds = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let grid = DesktopGrid(bounds: screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
         var placed: [CGRect] = []
-        for model in store.widgets {
-            let size = model.size.dimensions
-            let topLeft = Placement.freeTopLeft(for: size, in: bounds, occupied: placed)
-            let rect = CGRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height)
+        let ordered = store.widgets.sorted {
+            let a = $0.size.cells, b = $1.size.cells
+            return a.columns * a.rows > b.columns * b.rows
+        }
+        for model in ordered {
+            let rect = grid.firstFree(size: model.size, occupied: placed).map { grid.rect(at: $0, size: model.size) }
+                ?? DesktopGrid.place(model.frame, size: model.size, occupied: placed)
             placed.append(rect)
             panels[model.id]?.move(to: rect, animated: true)
+        }
+    }
+
+    /// Moves saved widgets onto the grid once at launch, pulling apart any that overlap.
+    private func tidyOntoGrid() {
+        var placed: [CGRect] = []
+        for model in store.widgets {
+            let rect = DesktopGrid.place(model.frame, size: model.size, occupied: placed)
+            placed.append(rect)
+            if rect.origin != model.frame.origin {
+                model.topLeft = CGPoint(x: rect.minX, y: rect.maxY)
+            }
         }
     }
 
@@ -167,13 +190,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private func screensChanged() {
         for model in store.widgets {
-            panels[model.id]?.ensureVisible { [weak self] in
-                guard let self else { return .zero }
-                let screen = NSScreen.main ?? NSScreen.screens.first
-                let bounds = screen?.visibleFrame ?? .zero
-                return Placement.freeTopLeft(for: model.size.dimensions, in: bounds,
-                                             occupied: self.widgetFrames(excluding: model.id))
-            }
+            panels[model.id]?.ensureVisible(occupied: widgetFrames(excluding: model.id))
         }
     }
 
@@ -214,6 +231,7 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(add)
         menu.addItem(menuItem("Widget Gallery…", #selector(openGallery), key: "n"))
         menu.addItem(menuItem("Edit Widgets…", #selector(openMyWidgets), key: "e"))
+        menu.addItem(menuItem("Wallpapers…", #selector(openWallpapers)))
         menu.addItem(menuItem("Accounts…", #selector(openAccounts)))
         menu.addItem(.separator())
 
@@ -263,6 +281,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     @objc private func openGallery() { showSettings(pane: .gallery) }
     @objc private func openMyWidgets() { showSettings(pane: .myWidgets) }
+    @objc private func openWallpapers() { showSettings(pane: .wallpapers) }
     @objc private func openAppearance() { showSettings(pane: .appearance) }
     @objc private func openAccounts() { showSettings(pane: .accounts) }
     @objc private func toggleHidden() { appearance.hidden.toggle() }

@@ -51,6 +51,10 @@ final class WidgetModel: ObservableObject, Identifiable {
 final class WidgetRuntime: ObservableObject {
     /// False while the widget is covered by other windows or hidden, so animations can pause.
     @Published var isOnScreen = true
+    /// The pointer is over the widget.
+    @Published var isHovered = false
+    /// The widget is being dragged right now.
+    @Published var isDragging = false
 }
 
 /// Settings every widget has: a custom background image.

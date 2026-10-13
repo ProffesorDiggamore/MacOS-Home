@@ -325,9 +325,9 @@ struct CairnWidget: View {
     private var isSample: Bool { context == .gallery }
     private var repo: String { CairnService.normalize(model[CairnKeys.repo]) }
     private var capturePath: String {
-        model[CairnKeys.captureTarget] == .daily
+        CairnService.inVault(model[CairnKeys.captureTarget] == .daily
             ? CairnService.dailyPath(folder: model[CairnKeys.dailyFolder])
-            : model[CairnKeys.inbox]
+            : model[CairnKeys.inbox], folder: model[CairnKeys.folder])
     }
 
     private var vault: CairnService.Vault {
@@ -375,7 +375,7 @@ struct CairnWidget: View {
 
     private func open(_ path: String?) {
         guard !isSample else { return }
-        cairn.open(path: path, repo: repo, webAddress: model[CairnKeys.web])
+        cairn.open(path: path, repo: repo, webAddress: model[CairnKeys.web], folder: model[CairnKeys.folder])
     }
 
     private var header: some View {
@@ -385,6 +385,12 @@ struct CairnWidget: View {
                 .foregroundStyle(Color.teal)
             Text("Cairn")
                 .font(.system(size: 12.5, weight: .semibold))
+            if vault.isPublic && !isSample {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .help("This notes repo is public — anyone can read it. Make it private on GitHub, or move your notes to a private repo (see Cairn › Settings › Sync).")
+            }
             Spacer()
             if let count = vault.noteCount {
                 Text("\(count) notes")
@@ -392,7 +398,7 @@ struct CairnWidget: View {
                     .foregroundStyle(.secondary)
             }
             Button {
-                open(CairnService.dailyPath(folder: model[CairnKeys.dailyFolder]))
+                open(CairnService.inVault(CairnService.dailyPath(folder: model[CairnKeys.dailyFolder]), folder: model[CairnKeys.folder]))
             } label: {
                 Image(systemName: "calendar")
                     .font(.system(size: 11, weight: .semibold))
@@ -411,7 +417,7 @@ struct CairnWidget: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    if let icon = note.icon { Text(icon).font(.system(size: 16)) }
+                    if let icon = note.icon { CairnIcon(value: icon, size: 16) }
                     Text(note.title)
                         .font(.system(size: 15, weight: .semibold))
                         .lineLimit(2)
@@ -440,7 +446,7 @@ struct CairnWidget: View {
                 } label: {
                     HStack(spacing: 6) {
                         if let icon = note.icon {
-                            Text(icon).font(.system(size: 12))
+                            CairnIcon(value: icon, size: 13)
                         } else {
                             Image(systemName: "doc.text").font(.system(size: 11)).foregroundStyle(Color.teal)
                         }

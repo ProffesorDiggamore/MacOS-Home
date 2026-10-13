@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case gallery, myWidgets, accounts, appearance, general, about
+    case gallery, myWidgets, wallpapers, accounts, appearance, general, about
     var id: String { rawValue }
 }
 
@@ -21,6 +21,7 @@ struct SettingsRootView: View {
                 Section("Widgets") {
                     Label("Widget Gallery", systemImage: "square.grid.2x2").tag(SettingsPane.gallery)
                     Label("My Widgets", systemImage: "rectangle.stack").tag(SettingsPane.myWidgets)
+                    Label("Wallpapers", systemImage: "photo.artframe").tag(SettingsPane.wallpapers)
                 }
                 Section("Settings") {
                     Label("Accounts", systemImage: "person.crop.circle").tag(SettingsPane.accounts)
@@ -34,6 +35,7 @@ struct SettingsRootView: View {
             switch state.pane ?? .gallery {
             case .gallery: GalleryView()
             case .myWidgets: MyWidgetsView()
+            case .wallpapers: WallpaperStudioView()
             case .accounts: AccountsView()
             case .appearance: AppearanceView()
             case .general: GeneralView()
@@ -57,18 +59,23 @@ struct PreviewBackdrop: View {
 
 // MARK: - Gallery
 
+/// The gallery scrolls smoothly because every card is exactly the same height.
+/// (Cards used to size themselves to their description, so the lazy grid kept
+/// guessing row heights wrong and yanked the scroll position when you flicked fast.)
 struct GalleryView: View {
     @State private var search = ""
+    @State private var category: WidgetCategory?
 
     private func matches(_ kind: WidgetKind) -> Bool {
-        search.isEmpty
-            || kind.title.localizedCaseInsensitiveContains(search)
-            || kind.summary.localizedCaseInsensitiveContains(search)
+        (category == nil || kind.category == category)
+            && (search.isEmpty
+                || kind.title.localizedCaseInsensitiveContains(search)
+                || kind.summary.localizedCaseInsensitiveContains(search))
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
+            LazyVStack(alignment: .leading, spacing: 26, pinnedViews: []) {
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Widget Gallery")
@@ -86,6 +93,14 @@ struct GalleryView: View {
                     .padding(.vertical, 6)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
                     .frame(width: 220)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        CategoryChip(title: "All \(WidgetKind.allCases.count)", selected: category == nil) { category = nil }
+                        ForEach(WidgetCategory.allCases) { item in
+                            CategoryChip(title: item.title, selected: category == item) { category = category == item ? nil : item }
+                        }
+                    }
                 }
                 ForEach(WidgetCategory.allCases) { category in
                     let kinds = WidgetKind.allCases.filter { $0.category == category && matches($0) }
@@ -129,7 +144,26 @@ struct SizePicker: View {
     }
 }
 
+private struct CategoryChip: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(selected ? Color.accentColor : Color.primary.opacity(0.07)))
+                .foregroundStyle(selected ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct GalleryCard: View {
+    static let height: CGFloat = 316
     let kind: WidgetKind
     @State private var size: WidgetSize
     @State private var justAdded = false
@@ -157,11 +191,13 @@ struct GalleryCard: View {
                     .frame(width: 26, height: 26)
                     .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(kind.tint.gradient))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(kind.title).font(.headline)
+                    Text(kind.title).font(.headline).lineLimit(1)
                     Text(kind.summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+                        .frame(height: 30, alignment: .topLeading)
+                        .help(kind.summary)
                 }
             }
 
@@ -187,6 +223,7 @@ struct GalleryCard: View {
             }
         }
         .padding(12)
+        .frame(height: Self.height, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
     }

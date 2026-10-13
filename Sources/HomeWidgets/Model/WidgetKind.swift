@@ -57,14 +57,16 @@ enum WidgetSize: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetCategory: String, CaseIterable, Identifiable {
-    case time, system, productivity, web, media, fun
+    case time, planner, system, tools, productivity, web, media, fun
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .time: return "Time & Date"
+        case .planner: return "School & Planning"
         case .system: return "System"
+        case .tools: return "Tools"
         case .productivity: return "Productivity"
         case .web: return "Accounts & Web"
         case .media: return "Photos, Text & Media"
@@ -100,6 +102,12 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
     case nowPlaying, photo, sticker, text, verse, moonPhase
     // Fun & Aesthetic
     case crabPet, lavaLamp, aquarium, digitalRain, nightSky, lifeGame, bounce, moodGradient, palette, dice, plant
+    // Version 3
+    case monthCalendar, upNext, agenda, classSchedule, homework, readingPlan
+    case timer, webSearch, dictionary, converter, qrCode, password, colorPicker, recentFiles, screenshots
+    case soundOutput, microphone, keepAwake, ipAddress, internet
+    case airQuality, githubRepo, water, quote, bigDate, timeRings
+    case abstractArt, meshGradient, flowingWaves, aurora, dunes, spirograph, orbits, breathe
 
     var id: String { rawValue }
 
@@ -252,6 +260,84 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
             return .init(title: "Dice & Coin", summary: "Roll a die or flip a coin.", symbol: "dice.fill", tint: .red, category: .fun, sizes: smallMedium)
         case .plant:
             return .init(title: "Pixel Plant", summary: "Water it every day and watch it grow.", symbol: "leaf.fill", tint: .green, category: .fun)
+
+        // School & Planning
+        case .monthCalendar:
+            return .init(title: "Month", summary: "The whole month, with dots on days that have events.", symbol: "calendar", tint: .red, category: .planner, sizes: [.small, .medium, .large], defaultSize: .small)
+        case .upNext:
+            return .init(title: "Up Next", summary: "Your next event with a countdown and a Join button for video calls.", symbol: "calendar.badge.clock", tint: .red, category: .planner, sizes: [.small, .medium, .large, .tall])
+        case .agenda:
+            return .init(title: "This Week", summary: "Everything on your calendar for the next seven days.", symbol: "list.bullet.rectangle.portrait.fill", tint: .red, category: .planner, sizes: [.medium, .large, .tall, .portrait], defaultSize: .tall)
+        case .classSchedule:
+            return .init(title: "Class Schedule", summary: "What class you're in now, how long is left, and what's next.", symbol: "graduationcap.fill", tint: .indigo, category: .planner, sizes: [.small, .medium, .large, .tall])
+        case .homework:
+            return .init(title: "Homework", summary: "Assignments by due date. Type “Essay fri” to add one.", symbol: "backpack.fill", tint: .orange, category: .planner, sizes: [.small, .medium, .large, .tall], defaultSize: .medium)
+        case .readingPlan:
+            return .init(title: "Bible Reading Plan", summary: "Today's chapters for reading the Bible in a year (or the New Testament, Gospels, Psalms).", symbol: "book.fill", tint: .brown, category: .planner, sizes: [.small, .medium])
+
+        // Tools
+        case .timer:
+            return .init(title: "Timer", summary: "A kitchen-style countdown with one-click presets. Rings even when hidden.", symbol: "timer", tint: .orange, category: .tools, sizes: [.small, .medium])
+        case .webSearch:
+            return .init(title: "Web Search", summary: "Search Google, YouTube, Wikipedia, Claude or Maps from the desktop.", symbol: "magnifyingglass", tint: .blue, category: .tools, sizes: [.small, .medium, .wide], defaultSize: .medium)
+        case .dictionary:
+            return .init(title: "Dictionary", summary: "Look up any word offline, plus a word of the day.", symbol: "character.book.closed.fill", tint: .brown, category: .tools, sizes: [.small, .medium, .large, .tall], defaultSize: .medium)
+        case .converter:
+            return .init(title: "Unit Converter", summary: "Length, weight, temperature, volume, speed, data and time.", symbol: "arrow.left.arrow.right", tint: .teal, category: .tools, sizes: [.small, .medium])
+        case .qrCode:
+            return .init(title: "QR Code", summary: "Turns whatever link you copied into a QR code for your phone.", symbol: "qrcode", tint: .gray, category: .tools, sizes: [.small, .medium, .large])
+        case .password:
+            return .init(title: "Password Generator", summary: "Strong random passwords, one click to copy.", symbol: "key.fill", tint: .green, category: .tools, sizes: [.small, .medium])
+        case .colorPicker:
+            return .init(title: "Color Picker", summary: "Grab any colour on screen and copy its hex code.", symbol: "eyedropper", tint: .pink, category: .tools, sizes: [.small, .medium])
+        case .recentFiles:
+            return .init(title: "Recent Files", summary: "Files you just changed in Desktop, Documents and Downloads. Drag them anywhere.", symbol: "clock.arrow.circlepath", tint: .blue, category: .tools, sizes: [.small, .medium, .large], defaultSize: .medium)
+        case .screenshots:
+            return .init(title: "Screenshots", summary: "Your latest screenshots, ready to drag into a message.", symbol: "camera.viewfinder", tint: .purple, category: .tools, sizes: [.small, .medium, .large], defaultSize: .medium)
+
+        // System (v3)
+        case .soundOutput:
+            return .init(title: "Sound Output", summary: "Switch between speakers, AirPods and displays in one click.", symbol: "hifispeaker.2.fill", tint: .pink, category: .system, sizes: [.small, .medium, .large], defaultSize: .medium)
+        case .microphone:
+            return .init(title: "Microphone", summary: "A big mute button for calls, plus input level.", symbol: "mic.fill", tint: .green, category: .system, sizes: [.small, .medium])
+        case .keepAwake:
+            return .init(title: "Keep Awake", summary: "Stops your Mac from sleeping, for a while or until you say so.", symbol: "cup.and.saucer.fill", tint: .brown, category: .system, sizes: [.small, .medium])
+        case .ipAddress:
+            return .init(title: "IP Address", summary: "Your local and public IP address. Click to copy.", symbol: "network", tint: .teal, category: .system, sizes: [.small, .medium])
+        case .internet:
+            return .init(title: "Internet", summary: "Is the internet OK? Live latency with a history graph.", symbol: "globe", tint: .green, category: .system, sizes: [.small, .medium])
+
+        // Web, daily & media (v3)
+        case .airQuality:
+            return .init(title: "Air Quality", summary: "Today's air quality index, PM2.5 and UV where you are.", symbol: "aqi.medium", tint: .mint, category: .web, sizes: [.small, .medium])
+        case .githubRepo:
+            return .init(title: "GitHub Repo", summary: "Stars, forks, issues and the latest commit for any repo.", symbol: "shippingbox.fill", tint: .purple, category: .web, sizes: [.small, .medium])
+        case .water:
+            return .init(title: "Water", summary: "Count glasses of water toward a daily goal.", symbol: "drop.fill", tint: .cyan, category: .productivity, sizes: [.small, .medium])
+        case .quote:
+            return .init(title: "Quote of the Day", summary: "A short, encouraging quote every morning.", symbol: "quote.opening", tint: .gray, category: .media, sizes: [.small, .medium, .wide], defaultSize: .medium)
+        case .bigDate:
+            return .init(title: "Big Date", summary: "Today's date in huge, beautiful type.", symbol: "textformat.size.larger", tint: .red, category: .time, sizes: [.small, .medium])
+        case .timeRings:
+            return .init(title: "Time Rings", summary: "How much of the day, week, month and year is done — as activity rings.", symbol: "circle.circle", tint: .pink, category: .time, sizes: [.small, .medium])
+
+        // Art
+        case .abstractArt:
+            return .init(title: "Abstract Art", summary: "Generative art in eight styles. Click for a new design.", symbol: "paintbrush.pointed.fill", tint: .purple, category: .fun, sizes: flexible)
+        case .meshGradient:
+            return .init(title: "Mesh Gradient", summary: "Slowly flowing colours, like Apple's newest wallpapers.", symbol: "circle.hexagongrid.fill", tint: .pink, category: .fun, sizes: flexible)
+        case .flowingWaves:
+            return .init(title: "Waves", summary: "Layers of colour rolling gently by.", symbol: "water.waves", tint: .blue, category: .fun, sizes: flexible, defaultSize: .medium)
+        case .aurora:
+            return .init(title: "Aurora", summary: "Northern lights dancing over a starry sky.", symbol: "sparkles", tint: .green, category: .fun, sizes: flexible, defaultSize: .medium)
+        case .dunes:
+            return .init(title: "Dunes", summary: "Calm desert hills under a low sun.", symbol: "sun.haze.fill", tint: .orange, category: .fun, sizes: flexible, defaultSize: .medium)
+        case .spirograph:
+            return .init(title: "Spirograph", summary: "A pattern drawing itself, over and over. Click for a new one.", symbol: "circle.dotted.circle", tint: .purple, category: .fun, sizes: flexible)
+        case .orbits:
+            return .init(title: "Orbits", summary: "Planets circling a glowing star.", symbol: "circle.dashed", tint: .indigo, category: .fun, sizes: flexible)
+        case .breathe:
+            return .init(title: "Breathe", summary: "A calming breathing guide. Click to start.", symbol: "wind", tint: .cyan, category: .fun, sizes: [.small, .medium, .large])
         }
     }
 
@@ -266,7 +352,8 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
     /// Widgets that animate continuously (they pause automatically when covered).
     var isAnimated: Bool {
         switch self {
-        case .crabPet, .lavaLamp, .aquarium, .digitalRain, .nightSky, .lifeGame, .bounce, .moodGradient:
+        case .crabPet, .lavaLamp, .aquarium, .digitalRain, .nightSky, .lifeGame, .bounce, .moodGradient,
+             .abstractArt, .meshGradient, .flowingWaves, .aurora, .dunes, .spirograph, .orbits, .breathe, .water:
             return true
         default:
             return false

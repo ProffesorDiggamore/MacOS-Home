@@ -35,13 +35,28 @@ final class NowPlayingService: PollingMonitor {
     @Published private(set) var artwork: NSImage?
     @Published private(set) var errorMessage: String?
 
-    override var interval: TimeInterval { 2 }
+    /// Music and Spotify announce track changes, so the timer only keeps the progress bar moving.
+    override var interval: TimeInterval { 4 }
 
     private let queue = DispatchQueue(label: "HomeWidgets.nowplaying", qos: .utility)
     private var artworkKey: String?
     private var inFlight = false
+    private var playerObservers: [NSObjectProtocol] = []
+
+    override func didStop() {
+        playerObservers.forEach { DistributedNotificationCenter.default().removeObserver($0) }
+        playerObservers = []
+    }
 
     override func sample() {
+        if playerObservers.isEmpty {
+            let center = DistributedNotificationCenter.default()
+            for name in ["com.apple.Music.playerInfo", "com.spotify.client.PlaybackStateChanged"] {
+                playerObservers.append(center.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
+                    self?.refresh()
+                })
+            }
+        }
         guard !inFlight else { return }
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         let players = [Player.spotify, .music].filter { running.contains($0.bundleID) }

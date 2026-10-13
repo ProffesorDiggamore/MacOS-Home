@@ -19,6 +19,9 @@ final class EventService: ObservableObject {
         let isAllDay: Bool
         let color: Color
         let location: String?
+        var calendarName: String = ""
+        /// A Zoom / Meet / Teams / FaceTime / Webex link found in the event.
+        var joinURL: URL? = nil
     }
 
     struct Reminder: Identifiable, Equatable {
@@ -150,10 +153,53 @@ final class EventService: ObservableObject {
                              end: event.endDate,
                              isAllDay: event.isAllDay,
                              color: Color(nsColor: event.calendar?.color ?? .systemRed),
-                             location: event.location)
+                             location: event.location,
+                             calendarName: event.calendar?.title ?? "",
+                             joinURL: Self.meetingLink(event))
             }
         let list = Array(items)
         if list != events { events = list }
+    }
+
+    private static let meetingHosts = ["zoom.us", "meet.google.com", "teams.microsoft.com", "teams.live.com", "facetime.apple.com", "webex.com", "whereby.com", "discord.gg", "discord.com"]
+
+    /// Looks for a video-call link in the event's URL, location and notes.
+    static func meetingLink(_ event: EKEvent) -> URL? {
+        if let url = event.url, isMeeting(url) { return url }
+        let text = [event.location, event.notes].compactMap { $0 }.joined(separator: " ")
+        guard !text.isEmpty, let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
+        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            if let url = match.url, isMeeting(url) { return url }
+        }
+        return nil
+    }
+
+    private static func isMeeting(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return meetingHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// Days in a month that have events, with up to three calendar colours each. Cheap: one query.
+    func busyDays(inMonthOf date: Date) -> [Int: [Color]] {
+        guard eventAccess == .granted else { return [:] }
+        let calendar = Calendar.current
+        guard let interval = calendar.dateInterval(of: .month, for: date) else { return [:] }
+        let predicate = store.predicateForEvents(withStart: interval.start, end: interval.end, calendars: nil)
+        var out: [Int: [Color]] = [:]
+        for event in store.events(matching: predicate) {
+            var day = max(event.startDate, interval.start)
+            let last = min(event.endDate.addingTimeInterval(-1), interval.end.addingTimeInterval(-1))
+            while day <= last {
+                let number = calendar.component(.day, from: day)
+                var colors = out[number, default: []]
+                let color = Color(nsColor: event.calendar?.color ?? .systemRed)
+                if colors.count < 3 && !colors.contains(color) { colors.append(color) }
+                out[number] = colors
+                guard let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day)) else { break }
+                day = next
+            }
+        }
+        return out
     }
 
     private func reloadReminders() {

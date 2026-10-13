@@ -76,13 +76,32 @@ struct MetricHistory: Equatable {
     var peak: Double { values.max() ?? 0 }
 }
 
+/// Holds a monitor only while the widget is both on screen *and* not covered by windows.
+/// Before, a CPU graph hidden behind a full-screen browser kept sampling every second.
 private struct MonitorSubscription: ViewModifier {
     let monitors: [PollingMonitor]
+    @Environment(\.widgetIsVisible) private var visible
+    @State private var appeared = false
+    @State private var holding = false
 
     func body(content: Content) -> some View {
         content
-            .onAppear { monitors.forEach { $0.retain() } }
-            .onDisappear { monitors.forEach { $0.release() } }
+            .onAppear {
+                appeared = true
+                update()
+            }
+            .onDisappear {
+                appeared = false
+                update()
+            }
+            .onChange(of: visible) { _, _ in update() }
+    }
+
+    private func update() {
+        let want = appeared && visible && !monitors.isEmpty
+        guard want != holding else { return }
+        holding = want
+        monitors.forEach { want ? $0.retain() : $0.release() }
     }
 }
 

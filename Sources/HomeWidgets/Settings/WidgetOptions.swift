@@ -270,7 +270,15 @@ struct MoreWidgetOptions: View {
                 ImagePickerRow(title: "Image", path: model.binding(StickerKeys.image))
                 Toggle("Fill the whole widget", isOn: model.binding(StickerKeys.fill))
                 Toggle("Rounded corners", isOn: model.binding(StickerKeys.rounded))
-                Text("PNGs with transparent backgrounds look best: they float right on your wallpaper. You can also drag an image onto the sticker.")
+                Toggle("Remove photo backgrounds automatically", isOn: model.binding(StickerKeys.autoCutout))
+                HStack {
+                    Button("Remove Background Now") { StickerCutout.run(model, force: true) }
+                        .disabled(model[StickerKeys.image].isEmpty)
+                    if !model[StickerKeys.original].isEmpty {
+                        Button("Use Original") { StickerCutout.restoreOriginal(model) }
+                    }
+                }
+                Text("Images that already have a transparent background are used as they are. Photos get their subject cut out (like Copy Subject in Photos) so they float right on your wallpaper. You can also drag an image onto the sticker.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -298,6 +306,134 @@ struct MoreWidgetOptions: View {
                 TextField("Name", text: model.binding(PlantKeys.name))
                 Text("Water it once a day. Miss two days and it starts to wilt.")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        default:
+            V3WidgetOptions(model: model)
+        }
+    }
+}
+
+/// Settings for the widgets added in version 3.
+struct V3WidgetOptions: View {
+    @ObservedObject var model: WidgetModel
+
+    private static let sounds = ["Glass", "Ping", "Hero", "Submarine", "Funk", "Purr", "Blow", "Bottle", "Frog", "Pop", "Sosumi", "Tink"]
+
+    var body: some View {
+        switch model.kind {
+        case .monthCalendar, .upNext, .agenda:
+            Section("Calendar") {
+                PermissionRow(kind: .calendar)
+                Text("Uses the calendars in the Calendar app (iCloud, Google, school…). Up Next shows a Join button for Zoom, Meet, Teams and FaceTime links.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .timer:
+            Section("Timer") {
+                TextField("Name", text: model.binding(TimerKeys.label))
+                TextField("Preset minutes", text: model.binding(TimerKeys.presets), prompt: Text("1, 3, 5, 10, 15, 25"))
+                Picker("Sound", selection: model.binding(TimerKeys.sound)) {
+                    ForEach(Self.sounds, id: \.self) { Text($0).tag($0) }
+                }
+                .onChange(of: model[TimerKeys.sound]) { _, name in NSSound(named: NSSound.Name(name))?.play() }
+            }
+        case .webSearch:
+            Section("Web Search") { OptionPicker("Search with", selection: model.binding(SearchKeys.engine)) }
+        case .qrCode:
+            Section("QR Code") {
+                TextField("Text or link", text: model.binding(QRKeys.text), prompt: Text("Leave empty to use the clipboard"))
+                Text("Click the code to copy it as a picture, or drag it into a document.").font(.caption).foregroundStyle(.secondary)
+            }
+        case .password:
+            Section("Password") {
+                Stepper("Length: \(model[PasswordKeys.length])", value: model.binding(PasswordKeys.length), in: 8...64)
+                Toggle("Include symbols", isOn: model.binding(PasswordKeys.symbols))
+                Toggle("Easy to type (word-style)", isOn: model.binding(PasswordKeys.memorable))
+                Text("Generated on your Mac with the system's secure random generator. Nothing is saved or sent anywhere.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .colorPicker:
+            Section("Color Picker") {
+                Button("Clear History") { model.config[ColorPickerKeys.history] = [] }
+            }
+        case .classSchedule:
+            Section("Classes") {
+                TextEditor(text: model.binding(ScheduleKeys.periods))
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 150)
+                Toggle("No classes on weekends", isOn: model.binding(ScheduleKeys.weekdaysOnly))
+                Text("One class per line, like “8:00-8:50 Math”. Times before 7 are read as afternoon.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .homework:
+            Section("Homework") {
+                let items = model[HomeworkKeys.items].map(HomeworkItem.init)
+                if items.isEmpty {
+                    Text("Nothing yet. Type in the widget: “Essay fri”, “Lab report tomorrow”, “Read ch 4 10/21”.").foregroundStyle(.secondary)
+                }
+                ForEach(items) { item in
+                    HStack {
+                        Text(item.title)
+                        Spacer()
+                        if let due = item.due { Text(DateFormats.string(due, template: "EEEMMMd")).foregroundStyle(.secondary) }
+                        Button(role: .destructive) {
+                            model.config[HomeworkKeys.items] = model[HomeworkKeys.items].filter { $0 != item.raw }
+                        } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+        case .readingPlan:
+            Section("Reading Plan") {
+                OptionPicker("Plan", selection: model.binding(ReadingKeys.plan))
+                DatePicker("Started", selection: model.binding(ReadingKeys.start), displayedComponents: .date)
+                Button("Restart From Today") {
+                    model.config[ReadingKeys.start] = Calendar.current.startOfDay(for: Date())
+                    model.config[ReadingKeys.done] = []
+                }
+                Text("Click the passage on the widget to read it on Bible Gateway (KJV).").font(.caption).foregroundStyle(.secondary)
+            }
+        case .airQuality:
+            Section("Air Quality") {
+                TextField("City", text: model.binding(AirKeys.city), prompt: Text("Current Location"))
+                Text("From Open-Meteo: free, no account. Updates every 30 minutes.").font(.caption).foregroundStyle(.secondary)
+            }
+        case .githubRepo:
+            Section("GitHub Repo") {
+                TextField("Repository", text: model.binding(RepoKeys.repo), prompt: Text("owner/name"))
+                Text("Public repos work without signing in. Private ones use the GitHub token from Accounts.").font(.caption).foregroundStyle(.secondary)
+            }
+        case .water:
+            Section("Water") {
+                Stepper("Daily goal: \(model[WaterKeys.goal]) glasses", value: model.binding(WaterKeys.goal), in: 1...20)
+                Button("Reset Today") { model.config[WaterKeys.count] = 0 }
+            }
+        case .bigDate:
+            Section("Big Date") { Toggle("Gradient numbers", isOn: model.binding(BigDateKeys.gradient)) }
+        case .abstractArt, .flowingWaves, .aurora, .dunes, .orbits, .meshGradient, .spirograph:
+            Section("Art") {
+                if model.kind == .abstractArt {
+                    Picker("Style", selection: Binding(get: { ArtStyle(rawValue: model[ArtKeys.style]) ?? .ribbons },
+                                                       set: { model.config[ArtKeys.style] = $0.rawValue })) {
+                        ForEach(ArtStyle.allCases) { Text($0.label).tag($0) }
+                    }
+                }
+                Picker("Colors", selection: model.binding(ArtKeys.palette)) {
+                    ForEach(ArtPalette.all) { Text($0.name).tag($0.id) }
+                }
+                if model.kind != .meshGradient && model.kind != .spirograph {
+                    Toggle("Gentle motion", isOn: model.binding(ArtKeys.animate))
+                }
+                Button("New Design") { model.config[ArtKeys.seed] = Int.random(in: 1...999_999) }
+                Text("Like one so much you want it everywhere? Make it your wallpaper in Settings › Wallpapers.").font(.caption).foregroundStyle(.secondary)
+            }
+        case .breathe:
+            Section("Breathe") { OptionPicker("Rhythm", selection: model.binding(BreatheKeys.pattern)) }
+        case .recentFiles, .screenshots:
+            Section {
+                Text(model.kind == .screenshots
+                     ? "Shows the newest files from your screenshot folder (\(RecentFilesMonitor.screenshotFolder.path)). Click to open, drag to share."
+                     : "Shows files you've changed in Desktop, Documents and Downloads. macOS may ask once to allow access to those folders.")
                     .foregroundStyle(.secondary)
             }
         default:

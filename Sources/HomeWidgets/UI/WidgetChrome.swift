@@ -127,6 +127,11 @@ struct WidgetChrome<Content: View>: View {
                     shape.strokeBorder(Color.white.opacity(scheme == .dark ? 0.10 : 0.45), lineWidth: 0.5)
                 }
             }
+            .overlayPreferenceValue(CustomBackgroundKey.self) { custom in
+                if context == .desktop {
+                    EdgeHint(runtime: model.runtime, seeThrough: isSeeThrough(custom))
+                }
+            }
             .shadow(color: style == .clear ? .black.opacity(0.45) : .clear, radius: 3, y: 1)
             .environment(\.colorScheme, scheme)
             .environment(\.widgetStyle, style)
@@ -137,6 +142,51 @@ struct WidgetChrome<Content: View>: View {
                     WidgetContextMenu(model: model)
                 }
             }
+    }
+}
+
+extension WidgetChrome {
+    /// Widgets with nothing behind their content (Clear style, stickers, faint backgrounds)
+    /// are hard to find and grab, so they get an edge hint on hover and while dragging.
+    func isSeeThrough(_ custom: CustomBackground?) -> Bool {
+        if !backgroundImagePath.isEmpty { return false }
+        if custom == .edgeToEdge { return model.kind == .sticker || model.kind == .photo }
+        if custom != nil { return false }
+        return style == .clear || appearance.backgroundOpacity < 0.3
+    }
+}
+
+/// A soft outline with a slowly travelling highlight: appears while the pointer is over a
+/// see-through widget or any widget is being dragged, then fades away again.
+struct EdgeHint: View {
+    @ObservedObject var runtime: WidgetRuntime
+    @ObservedObject private var drag = DragState.shared
+    let seeThrough: Bool
+
+    var body: some View {
+        let strong = runtime.isHovered || runtime.isDragging
+        let show = seeThrough && (strong || drag.isDragging)
+        let shape = RoundedRectangle(cornerRadius: Layout.cornerRadius, style: .continuous)
+        ZStack {
+            if show {
+                TimelineView(.animation(minimumInterval: 1 / 30, paused: !strong)) { timeline in
+                    let angle = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 6) / 6 * 360
+                    ZStack {
+                        shape.fill(Color.white.opacity(strong ? 0.07 : 0.035))
+                        shape.strokeBorder(Color.white.opacity(strong ? 0.28 : 0.18), lineWidth: 1)
+                        shape.strokeBorder(
+                            AngularGradient(colors: [.white.opacity(0.95), .white.opacity(0), .cyan.opacity(0.55), .white.opacity(0), .white.opacity(0.95)],
+                                            center: .center,
+                                            angle: .degrees(angle)),
+                            lineWidth: strong ? 2 : 1.2)
+                            .opacity(strong ? 1 : 0.5)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.22), value: show)
+        .allowsHitTesting(false)
     }
 }
 

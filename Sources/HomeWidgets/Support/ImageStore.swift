@@ -1,5 +1,7 @@
 import AppKit
+import CoreImage
 import ImageIO
+import Vision
 import UniformTypeIdentifiers
 
 /// Copies images you add ("upload") into ~/Library/Application Support/HomeWidgets/Images,
@@ -154,5 +156,79 @@ enum Keychain {
         add[kSecValueData] = data
         add[kSecAttrLabel] = "Home Widgets (\(account))"
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+    }
+}
+
+// MARK: - Transparency and cut-outs
+
+extension ImageStore {
+    private static var alphaCache: [String: Bool] = [:]
+    private static let alphaLock = NSLock()
+
+    /// True when the picture already has see-through areas (a PNG sticker, a cut-out).
+    /// Looks at a small copy, so it's cheap even for huge photos.
+    static func hasTransparency(_ path: String) -> Bool {
+        alphaLock.lock()
+        if let known = alphaCache[path] {
+            alphaLock.unlock()
+            return known
+        }
+        alphaLock.unlock()
+        var result = false
+        let url = URL(fileURLWithPath: path) as CFURL
+        if let source = CGImageSourceCreateWithURL(url, nil),
+           let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+               kCGImageSourceCreateThumbnailFromImageAlways: true,
+               kCGImageSourceThumbnailMaxPixelSize: 96,
+           ] as CFDictionary) {
+            let info = image.alphaInfo
+            if info != .none && info != .noneSkipFirst && info != .noneSkipLast {
+                let width = image.width, height = image.height
+                var pixels = [UInt8](repeating: 255, count: width * height * 4)
+                if let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                           space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                    context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+                    var clear = 0
+                    for index in stride(from: 3, to: pixels.count, by: 4) where pixels[index] < 200 { clear += 1 }
+                    result = clear > (width * height) / 50 // more than 2% see-through
+                }
+            }
+        }
+        alphaLock.lock()
+        alphaCache[path] = result
+        alphaLock.unlock()
+        return result
+    }
+
+    /// Lifts the main subject out of a photo (the same model as Photos' "Copy Subject")
+    /// and saves it as a new transparent PNG. Returns nil when nothing stands out.
+    static func cutOutSubject(_ path: String) async -> String? {
+        await Task.detached(priority: .userInitiated) { () -> String? in
+            let url = URL(fileURLWithPath: path) as CFURL
+            guard let source = CGImageSourceCreateWithURL(url, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceThumbnailMaxPixelSize: 2048,
+                  ] as CFDictionary) else { return nil }
+            let request = VNGenerateForegroundInstanceMaskRequest()
+            let handler = VNImageRequestHandler(cgImage: image, options: [:])
+            do {
+                try handler.perform([request])
+                guard let observation = request.results?.first, !observation.allInstances.isEmpty else { return nil }
+                let buffer = try observation.generateMaskedImage(ofInstances: observation.allInstances, from: handler, croppedToInstancesExtent: true)
+                let ciImage = CIImage(cvPixelBuffer: buffer)
+                guard let output = CIContext().createCGImage(ciImage, from: ciImage.extent) else { return nil }
+                let rep = NSBitmapImageRep(cgImage: output)
+                guard let png = rep.representation(using: .png, properties: [:]) else { return nil }
+                let destination = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("png")
+                try png.write(to: destination)
+                alphaLock.withLock { alphaCache[destination.path] = true }
+                return destination.path
+            } catch {
+                return nil
+            }
+        }.value
     }
 }
