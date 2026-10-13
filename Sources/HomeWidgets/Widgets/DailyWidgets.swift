@@ -341,7 +341,8 @@ private struct WaterGlass: View {
             var wave = Path()
             wave.move(to: CGPoint(x: 0, y: size.height))
             for x in stride(from: 0.0, through: size.width, by: 2) {
-                let y = top + sin(x / size.width * .pi * 2 + phase * 2.4) * 2.5
+                let angle: Double = x / size.width * .pi * 2 + phase * 2.4
+                let y: CGFloat = top + sin(angle) * 2.5
                 wave.addLine(to: CGPoint(x: x, y: y))
             }
             wave.addLine(to: CGPoint(x: size.width, y: size.height))

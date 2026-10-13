@@ -86,8 +86,10 @@ struct AbstractArt: View {
             layer.addFilter(.blur(radius: unit * 0.14))
             for i in 0..<7 {
                 let r = unit * random.range(0.22, 0.48)
-                let x = size.width * random.range(-0.1, 1.1) + sin(time * 0.15 + Double(i)) * unit * 0.05
-                let y = size.height * random.range(-0.1, 1.1) + cos(time * 0.12 + Double(i) * 1.7) * unit * 0.05
+                let driftX: CGFloat = sin(time * 0.15 + Double(i)) * unit * 0.05
+                let driftY: CGFloat = cos(time * 0.12 + Double(i) * 1.7) * unit * 0.05
+                let x: CGFloat = size.width * random.range(-0.1, 1.1) + driftX
+                let y: CGFloat = size.height * random.range(-0.1, 1.1) + driftY
                 layer.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(accent(i).opacity(0.85)))
             }
 
@@ -98,7 +100,7 @@ struct AbstractArt: View {
                 let endY = size.height * random.range(0.1, 0.9)
                 let bend1 = size.height * random.range(-0.2, 1.2)
                 let bend2 = size.height * random.range(-0.2, 1.2)
-                let wobble = sin(time * 0.2 + Double(i)) * unit * 0.04
+                let wobble: CGFloat = sin(time * 0.2 + Double(i)) * unit * 0.04
                 var path = Path()
                 path.move(to: CGPoint(x: -thickness, y: startY))
                 path.addCurve(to: CGPoint(x: size.width + thickness, y: endY + wobble),
@@ -125,8 +127,10 @@ struct AbstractArt: View {
                 var path = Path()
                 path.move(to: CGPoint(x: 0, y: size.height))
                 for step in stride(from: 0.0, through: size.width, by: max(2, size.width / 240)) {
-                    let p = step / size.width
-                    let y = base + sin(p * .pi * 2 * frequency + phase) * amplitude + sin(p * .pi * 5 + phase * 0.7) * amplitude * 0.3
+                    let p: Double = step / size.width
+                    let main: Double = sin(p * .pi * 2 * frequency + phase) * amplitude
+                    let ripple: Double = sin(p * .pi * 5 + phase * 0.7) * amplitude * 0.3
+                    let y: CGFloat = base + main + ripple
                     path.addLine(to: CGPoint(x: step, y: y))
                 }
                 path.addLine(to: CGPoint(x: size.width, y: size.height))
@@ -144,7 +148,8 @@ struct AbstractArt: View {
                 let width = size.width / 90
                 for k in 0..<90 {
                     let x = Double(k) * width
-                    let wave = sin(Double(k) * 0.08 + Double(b) + time * 0.3) * unit * 0.08
+                    let swing: Double = sin(Double(k) * 0.08 + Double(b) + time * 0.3)
+                    let wave: CGFloat = swing * unit * 0.08
                     let height = unit * random.range(0.15, 0.45)
                     let top = center + wave - height / 2
                     glow.fill(Path(CGRect(x: x, y: top, width: width * 1.6, height: height)),
@@ -162,7 +167,8 @@ struct AbstractArt: View {
             for (n, center) in centers.enumerated() {
                 let count = 22
                 for i in (0..<count).reversed() {
-                    let r = unit * 0.06 * Double(i + 1) + sin(time * 0.4 + Double(i) * 0.3) * unit * 0.004
+                    let pulse: CGFloat = sin(time * 0.4 + Double(i) * 0.3) * unit * 0.004
+                    let r: CGFloat = unit * 0.06 * Double(i + 1) + pulse
                     var ring = context
                     ring.blendMode = .screen
                     ring.stroke(Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
@@ -190,7 +196,8 @@ struct AbstractArt: View {
                     for (index, tri) in [[a, b, e], [a, e, d]].enumerated() {
                         let cx = (tri[0].x + tri[1].x + tri[2].x) / 3 / size.width
                         let cy = (tri[0].y + tri[1].y + tri[2].y) / 3 / size.height
-                        let mix = (cx * 0.6 + cy * 0.4 + sin(time * 0.3 + Double(r + c)) * 0.04)
+                        let shimmer: Double = sin(time * 0.3 + Double(r + c)) * 0.04
+                        let mix: Double = cx * 0.6 + cy * 0.4 + shimmer
                         let color = accent(Int(mix * Double(accents.count * 2)))
                         var path = Path()
                         path.addLines(tri)
@@ -212,7 +219,9 @@ struct AbstractArt: View {
                 path.move(to: CGPoint(x: 0, y: size.height))
                 for step in stride(from: 0.0, through: size.width, by: max(2, size.width / 200)) {
                     let p = step / size.width
-                    path.addLine(to: CGPoint(x: step, y: base - sin(p * .pi * f1 + p1 + time * 0.05) * a1 - sin(p * .pi * f2) * a2))
+                    let hill: Double = sin(p * .pi * f1 + p1 + time * 0.05) * a1
+                    let ridge: Double = sin(p * .pi * f2) * a2
+                    path.addLine(to: CGPoint(x: step, y: base - hill - ridge))
                 }
                 path.addLine(to: CGPoint(x: size.width, y: size.height))
                 path.closeSubpath()
@@ -235,7 +244,9 @@ struct AbstractArt: View {
                 orbit.rotate(by: tilt)
                 orbit.stroke(Path(ellipseIn: CGRect(x: -rx, y: -ry, width: rx * 2, height: ry * 2)), with: .color(.white.opacity(0.12)), lineWidth: 1)
                 let angle = random.range(0, .pi * 2) + time * (0.5 / Double(i + 1))
-                let planet = CGPoint(x: cos(angle) * rx, y: sin(angle) * ry)
+                let px: CGFloat = cos(angle) * rx
+                let py: CGFloat = sin(angle) * ry
+                let planet = CGPoint(x: px, y: py)
                 let pr = unit * random.range(0.012, 0.03)
                 orbit.fill(Path(ellipseIn: CGRect(x: planet.x - pr, y: planet.y - pr, width: pr * 2, height: pr * 2)), with: .color(accent(i + 1)))
             }
