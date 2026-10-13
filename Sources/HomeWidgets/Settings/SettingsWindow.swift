@@ -317,6 +317,14 @@ struct WidgetEditor: View {
                     Text("Same as Other Widgets").tag(WidgetStyle?.none)
                     ForEach(WidgetStyle.available) { Text($0.label).tag(WidgetStyle?.some($0)) }
                 }
+                Picker("Colors", selection: model.binding(ColorKeys.mode)) {
+                    Text("Same as Other Widgets").tag("")
+                    ForEach(WidgetColorMode.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+                if model[ColorKeys.mode] == WidgetColorMode.single.rawValue {
+                    ColorChoiceRow(hex: Binding(get: { model[ColorKeys.single].isEmpty ? AppearanceSettings.shared.singleColor : model[ColorKeys.single] },
+                                                set: { model.config[ColorKeys.single] = $0 }))
+                }
             }
 
             WidgetOptions(model: model)

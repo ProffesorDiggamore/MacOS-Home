@@ -45,6 +45,12 @@ struct AppearanceView: View {
             }
 
             Section("Color & Type") {
+                Picker("Widget colors", selection: $appearance.colorMode) {
+                    ForEach(WidgetColorMode.allCases) { Text($0.label).tag($0) }
+                }
+                if appearance.colorMode == .single {
+                    ColorChoiceRow(hex: $appearance.singleColor)
+                }
                 LabeledContent("Accent color") {
                     HStack(spacing: 8) {
                         ForEach(AccentOption.allCases) { option in
@@ -201,5 +207,30 @@ struct AboutView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
+/// Quick swatches plus a full colour picker, stored as RRGGBB.
+struct ColorChoiceRow: View {
+    @Binding var hex: String
+    private static let swatches = ["34C759", "FFCC00", "0A84FF", "FF9500", "FF3B30", "AF52DE", "FF2D55", "5AC8FA", "FFFFFF"]
+
+    var body: some View {
+        LabeledContent("Color") {
+            HStack(spacing: 8) {
+                ForEach(Self.swatches, id: \.self) { value in
+                    Button { hex = value } label: {
+                        Circle()
+                            .fill(Color(hexString: value) ?? .green)
+                            .frame(width: 20, height: 20)
+                            .overlay(Circle().strokeBorder(Color.primary.opacity(hex == value ? 0.9 : 0.15), lineWidth: hex == value ? 2 : 1).padding(hex == value ? -3 : 0))
+                    }
+                    .buttonStyle(.plain)
+                }
+                ColorPicker("", selection: Binding(get: { Color(hexString: hex) ?? .green }, set: { hex = $0.hexString }), supportsOpacity: false)
+                    .labelsHidden()
+            }
+        }
     }
 }

@@ -11,8 +11,69 @@ enum WidgetContext {
     case desktop, gallery, editor
 }
 
+/// What widgets read as `@Environment(\.widgetStyle)`: the background style plus
+/// the colour scheme. `tone(_:)` turns a widget's own colour into the chosen one,
+/// so every graph, ring and icon follows the setting without per-widget code.
+struct WidgetLook: Equatable {
+    var style: WidgetStyle
+    var mode: WidgetColorMode = .trio
+    var single: Color = .green
+
+    static func == (lhs: WidgetLook, rhs: WidgetStyle) -> Bool { lhs.style == rhs }
+    static func != (lhs: WidgetLook, rhs: WidgetStyle) -> Bool { lhs.style != rhs }
+
+    func tone(_ color: Color) -> Color {
+        if style == .tinted { return .white }
+        switch mode {
+        case .original: return color
+        case .single: return Self.isNeutral(color) ? color : single
+        case .trio: return Self.trio(color)
+        }
+    }
+
+    static let trioGreen = Color(hex: 0x34C759)
+    static let trioYellow = Color(hex: 0xFFCC00)
+    static let trioBlue = Color(hex: 0x0A84FF)
+
+    private static var cache: [Color: Color] = [:]
+
+    /// Warm colours become yellow, greens become green, everything cool becomes blue.
+    static func trio(_ color: Color) -> Color {
+        if let hit = cache[color] { return hit }
+        var result = color
+        if let rgb = NSColor(color).usingColorSpace(.sRGB), rgb.saturationComponent > 0.18 {
+            let hue = rgb.hueComponent * 360
+            switch hue {
+            case 75..<175: result = trioGreen
+            case 175..<345: result = trioBlue
+            default: result = trioYellow   // reds, oranges, yellows, browns
+            }
+        }
+        cache[color] = result
+        return result
+    }
+
+    /// Greys and white stay as they are (text, tracks, separators).
+    static func isNeutral(_ color: Color) -> Bool {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return false }
+        return rgb.saturationComponent < 0.18
+    }
+}
+
+extension Color {
+    init?(hexString: String) {
+        guard hexString.count == 6, let value = UInt32(hexString, radix: 16) else { return nil }
+        self.init(hex: value)
+    }
+
+    var hexString: String {
+        guard let rgb = NSColor(self).usingColorSpace(.sRGB) else { return "34C759" }
+        return String(format: "%02X%02X%02X", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255))
+    }
+}
+
 private struct WidgetStyleKey: EnvironmentKey {
-    static let defaultValue: WidgetStyle = .glass
+    static let defaultValue = WidgetLook(style: .glass)
 }
 
 private struct WidgetContextKey: EnvironmentKey {
@@ -28,7 +89,7 @@ private struct WidgetIsVisibleKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    var widgetStyle: WidgetStyle {
+    var widgetStyle: WidgetLook {
         get { self[WidgetStyleKey.self] }
         set { self[WidgetStyleKey.self] = newValue }
     }
@@ -92,6 +153,14 @@ struct WidgetChrome<Content: View>: View {
 
     private var backgroundImagePath: String { model[BackgroundKeys.image] }
 
+    /// This widget's colour choice, falling back to the global one.
+    private var look: WidgetLook {
+        let own = WidgetColorMode(rawValue: model[ColorKeys.mode])
+        let mode = own ?? appearance.colorMode
+        let hex = own == nil ? appearance.singleColor : (model[ColorKeys.single].isEmpty ? appearance.singleColor : model[ColorKeys.single])
+        return WidgetLook(style: style, mode: mode, single: Color(hexString: hex) ?? .green)
+    }
+
     private var scheme: ColorScheme {
         if style == .tinted || !backgroundImagePath.isEmpty { return .dark }
         switch appearance.scheme {
@@ -134,7 +203,7 @@ struct WidgetChrome<Content: View>: View {
             }
             .shadow(color: style == .clear ? .black.opacity(0.45) : .clear, radius: 3, y: 1)
             .environment(\.colorScheme, scheme)
-            .environment(\.widgetStyle, style)
+            .environment(\.widgetStyle, look)
             .environment(\.widgetAccent, appearance.accentColor)
             .fontDesign(appearance.font.design)
             .contextMenu {
@@ -209,6 +278,10 @@ struct WidgetContextMenu: View {
             ForEach(WidgetStyle.available) { style in
                 Text(style.label).tag(WidgetStyle?.some(style))
             }
+        }
+        Picker("Colors", selection: model.binding(ColorKeys.mode)) {
+            Text("Same as Other Widgets").tag("")
+            ForEach(WidgetColorMode.allCases) { Text($0.label).tag($0.rawValue) }
         }
         Divider()
         Button("Remove Widget") {

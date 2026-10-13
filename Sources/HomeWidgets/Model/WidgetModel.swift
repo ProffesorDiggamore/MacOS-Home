@@ -64,6 +64,12 @@ enum BackgroundKeys {
     static let blur = ConfigKey("bgBlur", 0.0)
 }
 
+/// A widget's own colour choice ("" = same as other widgets).
+enum ColorKeys {
+    static let mode = ConfigKey("colorMode", "")
+    static let single = ConfigKey("singleColor", "")
+}
+
 /// On-disk representation of a widget.
 struct WidgetRecord: Codable {
     var id: UUID

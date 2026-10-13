@@ -28,6 +28,20 @@ enum WidgetStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// How a widget's graphs, rings and icons are coloured.
+enum WidgetColorMode: String, CaseIterable, Identifiable, Codable {
+    case trio, single, original
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .trio: return "Green, Yellow & Blue"
+        case .single: return "One Color"
+        case .original: return "Original (many colors)"
+        }
+    }
+}
+
 enum SchemeOption: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }
@@ -135,6 +149,9 @@ final class AppearanceSettings: ObservableObject {
     @Published var temperatureUnit: TemperatureUnit { didSet { defaults.set(temperatureUnit.rawValue, forKey: "temperatureUnit") } }
     @Published var showInDock: Bool { didSet { defaults.set(showInDock, forKey: "showInDock") } }
     @Published var showMenuBarIcon: Bool { didSet { defaults.set(showMenuBarIcon, forKey: "showMenuBarIcon") } }
+    @Published var colorMode: WidgetColorMode { didSet { defaults.set(colorMode.rawValue, forKey: "colorMode") } }
+    /// The colour used when `colorMode` is `.single`, as RRGGBB.
+    @Published var singleColor: String { didSet { defaults.set(singleColor, forKey: "singleColor") } }
 
     init() {
         style = WidgetStyle(rawValue: defaults.string(forKey: "style") ?? "") ?? .glass
@@ -150,6 +167,8 @@ final class AppearanceSettings: ObservableObject {
         temperatureUnit = TemperatureUnit(rawValue: defaults.string(forKey: "temperatureUnit") ?? "") ?? .system
         showInDock = defaults.object(forKey: "showInDock") as? Bool ?? true
         showMenuBarIcon = defaults.object(forKey: "showMenuBarIcon") as? Bool ?? true
+        colorMode = WidgetColorMode(rawValue: defaults.string(forKey: "colorMode") ?? "") ?? .trio
+        singleColor = defaults.string(forKey: "singleColor") ?? "34C759"
     }
 
     var accentColor: Color { accent.color }
