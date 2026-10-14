@@ -129,6 +129,7 @@ struct WidgetOptions: View {
         case .photo:
             Section("Photos") {
                 ImageListEditor(paths: model.binding(PhotoKeys.images))
+                PhotoFramingEditor(model: model)
                 PathPicker(title: "Or show a folder", path: model.binding(PhotoKeys.path), placeholder: "None", chooseFolders: true)
                 OptionPicker("Frame", selection: model.binding(PhotoKeys.frame))
                 if model[PhotoKeys.frame] == .polaroid {
@@ -534,6 +535,113 @@ struct ImageListEditor: View {
             }
             if !paths.isEmpty {
                 Text("\(paths.count) photo\(paths.count == 1 ? "" : "s")").foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Drag a photo to move it, pinch or use the slider to zoom, and cut its background out.
+struct PhotoFramingEditor: View {
+    @ObservedObject var model: WidgetModel
+    @State private var index = 0
+    @State private var dragStart: PhotoFraming?
+    @State private var zoomStart: PhotoFraming?
+
+    var body: some View {
+        let paths = model[PhotoKeys.images]
+        if !paths.isEmpty {
+            let path = paths[min(index, paths.count - 1)]
+            let framing = PhotoFraming.get(model, path)
+            let dims = model.size.dimensions
+            let scale = min(300 / dims.width, 220 / dims.height)
+            let size = CGSize(width: dims.width * scale, height: dims.height * scale)
+            let transparent = ImageStore.hasTransparency(path)
+            let cutOriginal = PhotoCutout.original(of: path, in: model)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Position & Zoom")
+                    Spacer()
+                    if paths.count > 1 {
+                        Stepper("Photo \(min(index, paths.count - 1) + 1) of \(paths.count)", value: $index, in: 0...(paths.count - 1))
+                    }
+                }
+                FramedPhoto(framing: framing) {
+                    if let image = ImageStore.image(at: path, maxPixel: 1200) {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: transparent && paths.count == 1 ? .fit : .fill)
+                    }
+                }
+                .frame(width: size.width, height: size.height)
+                .background(Checkerboard())
+                .clipShape(RoundedRectangle(cornerRadius: Layout.cornerRadius * scale, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Layout.cornerRadius * scale, style: .continuous).strokeBorder(Color.primary.opacity(0.15)))
+                .overlay {
+                    if PhotoCutout.working.contains(path) {
+                        ProgressView().controlSize(.small).padding(10).background(Circle().fill(.regularMaterial))
+                    }
+                }
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let start = dragStart ?? framing
+                        if dragStart == nil { dragStart = framing }
+                        var next = start
+                        next.x = min(1, max(-1, start.x + value.translation.width / size.width))
+                        next.y = min(1, max(-1, start.y + value.translation.height / size.height))
+                        PhotoFraming.set(next, for: path, in: model)
+                    }
+                    .onEnded { _ in dragStart = nil })
+                .simultaneousGesture(MagnifyGesture()
+                    .onChanged { value in
+                        let start = zoomStart ?? framing
+                        if zoomStart == nil { zoomStart = framing }
+                        var next = start
+                        next.zoom = min(4, max(0.5, start.zoom * value.magnification))
+                        PhotoFraming.set(next, for: path, in: model)
+                    }
+                    .onEnded { _ in zoomStart = nil })
+                .help("Drag to move the photo. Pinch to zoom.")
+                .frame(maxWidth: .infinity)
+
+                Slider(value: Binding(get: { framing.zoom }, set: { zoom in
+                    var next = framing
+                    next.zoom = zoom
+                    PhotoFraming.set(next, for: path, in: model)
+                }), in: 0.5...4) { Text("Zoom") }
+
+                HStack {
+                    if let cutOriginal, FileManager.default.fileExists(atPath: cutOriginal) {
+                        Button("Use Original") { PhotoCutout.restore(path, in: model) }
+                    } else {
+                        Button(PhotoCutout.working.contains(path) ? "Removing Background…" : "Remove Background") {
+                            PhotoCutout.run(path, in: model)
+                        }
+                        .disabled(transparent || PhotoCutout.working.contains(path))
+                    }
+                    Spacer()
+                    Button("Reset Position") { PhotoFraming.set(PhotoFraming(), for: path, in: model) }
+                        .disabled(framing == PhotoFraming())
+                }
+                Text(transparent && cutOriginal == nil
+                     ? "This photo already has a see-through background."
+                     : "Remove Background lifts out the main subject, like Copy Subject in Photos, so it floats on your wallpaper.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// The grey checks behind see-through images.
+private struct Checkerboard: View {
+    var body: some View {
+        Canvas { context, size in
+            let cell: CGFloat = 8
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.82)))
+            for row in 0...Int(size.height / cell) {
+                for column in 0...Int(size.width / cell) where (row + column) % 2 == 0 {
+                    context.fill(Path(CGRect(x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell, height: cell)),
+                                 with: .color(Color(white: 0.92)))
+                }
             }
         }
     }

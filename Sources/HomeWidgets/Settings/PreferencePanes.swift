@@ -136,14 +136,21 @@ struct GeneralView: View {
 
     var body: some View {
         Form {
-            Section("Desktop") {
+            Section {
                 Picker("Widgets appear", selection: $appearance.layer) {
                     ForEach(WidgetLayer.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.radioGroup)
                 Toggle("Lock widget positions", isOn: $appearance.locked)
                 Toggle("Hide all widgets", isOn: $appearance.hidden)
+                Toggle("Show on every desktop", isOn: $appearance.allDesktops)
                 Button("Arrange Widgets Neatly") { AppController.shared.arrangeWidgets() }
+            } footer: {
+                Text(appearance.allDesktops
+                     ? "On every desktop, macOS only draws widgets once a three-finger swipe has finished."
+                     : "Widgets live on this desktop and slide in with it when you swipe back from a full-screen app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("App") {

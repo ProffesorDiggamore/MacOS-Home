@@ -125,15 +125,53 @@ struct WordClockWidget: View {
         return (cells, minute % 5)
     }
 
+    private static let hourNames = ["twelve", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"]
+
+    /// The same time in plain words, for the medium layout.
+    private func phrase(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let minute = calendar.component(.minute, from: date) / 5 * 5
+        let hour = calendar.component(.hour, from: date) + (minute >= 35 ? 1 : 0)
+        let name = Self.hourNames[hour % 12]
+        switch minute {
+        case 0: return "It's \(name) o'clock"
+        case 15: return "It's quarter past \(name)"
+        case 30: return "It's half past \(name)"
+        case 45: return "It's quarter to \(name)"
+        case ..<30: return "It's \(Self.minuteWords[minute] ?? "") past \(name)"
+        default: return "It's \(Self.minuteWords[60 - minute] ?? "") to \(name)"
+        }
+    }
+
+    private static let minuteWords = [5: "five", 10: "ten", 20: "twenty", 25: "twenty-five"]
+
     var body: some View {
         Ticking(everySecond: false) { date in
+            if model.family == .medium {
+                HStack(spacing: 18) {
+                    grid(date, fontSize: 10, spacing: 2)
+                        .aspectRatio(1, contentMode: .fit)
+                    Text(phrase(date))
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .foregroundStyle(style.tone(accent))
+                        .minimumScaleFactor(0.5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .widgetPadding(18)
+            } else {
+                grid(date, fontSize: model.family == .small ? 10.5 : 20, spacing: model.family == .small ? 2 : 6)
+                    .widgetPadding(model.family == .small ? 14 : 26)
+            }
+        }
+    }
+
+    private func grid(_ date: Date, fontSize: CGFloat, spacing: CGFloat) -> some View {
             let state = litCells(date)
             let lit = state.0
             let extra = state.1
             let tone = style.tone(accent)
-            let fontSize: CGFloat = model.family == .small ? 10.5 : 20
-            ZStack {
-                VStack(spacing: model.family == .small ? 2 : 6) {
+            return ZStack {
+                VStack(spacing: spacing) {
                     ForEach(0..<10, id: \.self) { row in
                         HStack(spacing: 0) {
                             ForEach(Array(Self.rows[row].enumerated()), id: \.offset) { column, letter in
@@ -153,8 +191,6 @@ struct WordClockWidget: View {
                 }
                 .padding(-6)
             }
-            .widgetPadding(model.family == .small ? 14 : 26)
-        }
     }
 
     private func dot(_ on: Bool, _ tone: Color) -> some View {

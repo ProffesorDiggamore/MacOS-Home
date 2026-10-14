@@ -66,8 +66,12 @@ struct MonthCalendarWidget: View {
         let ordered = Array(symbols[(calendar.firstWeekday - 1)...] + symbols[..<(calendar.firstWeekday - 1)])
         let isThisMonth = offset == 0
         let todayNumber = calendar.component(.day, from: today)
-        let compact = model.family == .small
+        // One-row-tall widgets (small, medium, wide) use the compact grid so all six weeks fit.
+        let compact = model.size.cells.rows == 1
+        let big = model.family == .large
         let tone = style.tone(.red)
+        let cells = leading + days
+        let weeks = (cells + 6) / 7
 
         VStack(spacing: compact ? 3 : 5) {
             HStack {
@@ -75,7 +79,7 @@ struct MonthCalendarWidget: View {
                     .font(.system(size: compact ? 10.5 : 12, weight: .bold))
                     .foregroundStyle(tone)
                 Spacer()
-                if !compact {
+                if model.family != .small {
                     Button { offset -= 1 } label: { Image(systemName: "chevron.left") }
                     Button { offset = 0 } label: { Image(systemName: "circle.fill").font(.system(size: 5)) }.disabled(offset == 0)
                     Button { offset += 1 } label: { Image(systemName: "chevron.right") }
@@ -83,35 +87,31 @@ struct MonthCalendarWidget: View {
             }
             .font(.system(size: 11, weight: .semibold))
             .buttonStyle(WidgetButtonStyle())
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: compact ? 1 : 3) {
+            HStack(spacing: 0) {
                 ForEach(ordered.indices, id: \.self) { index in
-                    Text(ordered[index]).font(.system(size: compact ? 8.5 : 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(ordered[index])
+                        .font(.system(size: compact ? 8.5 : (big ? 11.5 : 10), weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
                 }
-                ForEach(0..<(leading + days), id: \.self) { slot in
-                    if slot < leading {
-                        Color.clear.frame(height: compact ? 15 : 22)
-                    } else {
-                        let day = slot - leading + 1
-                        let isToday = isThisMonth && day == todayNumber
-                        VStack(spacing: 1) {
-                            Text("\(day)")
-                                .font(.system(size: compact ? 9.5 : 11.5, weight: isToday ? .bold : .medium))
-                                .foregroundStyle(isToday ? Color.white : Color.primary)
-                                .frame(width: compact ? 16 : 22, height: compact ? 15 : 20)
-                                .background(Circle().fill(isToday ? tone : .clear))
-                            if !compact {
-                                HStack(spacing: 1.5) {
-                                    ForEach(Array((busy[day] ?? []).enumerated()), id: \.offset) { _, color in
-                                        Circle().fill(color).frame(width: 3.5, height: 3.5)
-                                    }
-                                }
-                                .frame(height: 3.5)
-                            }
+            }
+            // Week rows share the height, so the month fills tall and large widgets.
+            ForEach(0..<weeks, id: \.self) { week in
+                HStack(spacing: 0) {
+                    ForEach(0..<7, id: \.self) { column in
+                        let slot = week * 7 + column
+                        if slot < leading || slot >= cells {
+                            Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+                        } else {
+                            dayCell(slot - leading + 1, isToday: isThisMonth && slot - leading + 1 == todayNumber,
+                                    compact: compact, big: big, tone: tone)
+                                .frame(maxWidth: .infinity)
                         }
                     }
                 }
+                .frame(maxHeight: compact ? nil : .infinity)
             }
-            Spacer(minLength: 0)
+            if compact { Spacer(minLength: 0) }
         }
         .widgetPadding(compact ? 12 : 14)
         .usesEvents()
@@ -120,6 +120,24 @@ struct MonthCalendarWidget: View {
         }
         .help(accessMessage(service.eventAccess) ?? "")
         .accentColor(accent)
+    }
+
+    private func dayCell(_ day: Int, isToday: Bool, compact: Bool, big: Bool, tone: Color) -> some View {
+        VStack(spacing: 1) {
+            Text("\(day)")
+                .font(.system(size: compact ? 9.5 : (big ? 15 : 11.5), weight: isToday ? .bold : .medium))
+                .foregroundStyle(isToday ? Color.white : Color.primary)
+                .frame(width: compact ? 16 : (big ? 30 : 22), height: compact ? 14 : (big ? 28 : 20))
+                .background(Circle().fill(isToday ? tone : .clear))
+            if !compact {
+                HStack(spacing: 1.5) {
+                    ForEach(Array((busy[day] ?? []).enumerated()), id: \.offset) { _, color in
+                        Circle().fill(color).frame(width: big ? 5 : 3.5, height: big ? 5 : 3.5)
+                    }
+                }
+                .frame(height: big ? 5 : 3.5)
+            }
+        }
     }
 }
 
@@ -144,10 +162,24 @@ struct UpNextWidget: View {
             VStack(alignment: .leading, spacing: 6) {
                 WidgetHeader(title: "Up Next", symbol: "calendar.badge.clock", color: .red)
                 if let next = list.first {
-                    eventCard(next, now: timeline.date)
-                    if model.family != .small {
+                    switch model.size {
+                    case .small:
+                        eventCard(next, now: timeline.date)
+                    case .medium, .wide:
+                        // Side by side, so the header never gets pushed out of the widget.
+                        HStack(alignment: .top, spacing: 12) {
+                            eventCard(next, now: timeline.date).frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(list.dropFirst().prefix(3)) { event in
+                                    EventRow(event: event, compact: true, showDay: true)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    default:
+                        eventCard(next, now: timeline.date)
                         Divider().opacity(0.4)
-                        ForEach(list.dropFirst().prefix(model.family == .large ? 6 : 2)) { event in
+                        ForEach(list.dropFirst().prefix(model.size == .tall ? 3 : (model.size == .portrait ? 10 : 6))) { event in
                             EventRow(event: event, compact: true, showDay: true)
                         }
                     }
@@ -351,13 +383,30 @@ struct ClassScheduleWidget: View {
                 } else {
                     Text("Done for today ✅").font(.system(size: 15, weight: .semibold))
                 }
-                if model.family != .small && !weekend {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(periods.filter { $0.end > minute }.prefix(model.family == .large ? 9 : 3)) { period in
+                // After the last class (and on weekends) the list shows the next school day instead of nothing.
+                let finished = !periods.isEmpty && (weekend || (current == nil && next == nil))
+                let upcoming = finished ? periods : periods.filter { $0.end > minute }
+                let big = model.family == .large
+                if (model.family != .small || model.size == .tall) && !upcoming.isEmpty {
+                    if finished {
+                        Text(nextSchoolDay(after: now).uppercased())
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(tone)
+                            .padding(.top, 4)
+                    }
+                    VStack(alignment: .leading, spacing: big ? 0 : 2) {
+                        ForEach(upcoming.prefix(big ? 10 : (model.size == .tall ? 6 : 3))) { period in
                             HStack {
-                                Text(ClassPeriod.clock(period.start)).font(.system(size: 10.5, design: .rounded)).monospacedDigit().foregroundStyle(.secondary).frame(width: 58, alignment: .leading)
-                                Text(period.name).font(.system(size: 11.5, weight: period == current ? .bold : .regular)).lineLimit(1)
+                                Text(ClassPeriod.clock(period.start))
+                                    .font(.system(size: big ? 12 : 10.5, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: big ? 66 : 58, alignment: .leading)
+                                Text(period.name)
+                                    .font(.system(size: big ? 13.5 : 11.5, weight: period == current ? .bold : .regular))
+                                    .lineLimit(1)
                             }
+                            .frame(maxHeight: big ? 30 : nil)
                         }
                     }
                     .padding(.top, 2)
@@ -366,6 +415,16 @@ struct ClassScheduleWidget: View {
             }
             .widgetPadding()
         }
+    }
+
+    /// "Tomorrow", or the weekday name when school skips the weekend.
+    private func nextSchoolDay(after now: Date) -> String {
+        let calendar = Calendar.current
+        var day = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        if model[ScheduleKeys.weekdaysOnly] {
+            while calendar.isDateInWeekend(day) { day = calendar.date(byAdding: .day, value: 1, to: day) ?? day }
+        }
+        return calendar.isDateInTomorrow(day) ? "Tomorrow" : DateFormats.string(day, template: "EEEE")
     }
 }
 

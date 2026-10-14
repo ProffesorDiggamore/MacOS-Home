@@ -66,6 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if let folder = UserDefaults.standard.string(forKey: "HWSnapshots") {
+            return Snapshots.run(to: folder)
+        }
+        #endif
         // `-HWNoWindow YES` (used by the screenshot test) starts with just the widgets.
         let suppressWindow = UserDefaults.standard.bool(forKey: "HWNoWindow")
         AppController.shared.start(showWindow: !launchedAsLoginItem && !suppressWindow)

@@ -262,26 +262,29 @@ struct WebSearchWidget: View {
 
     var body: some View {
         let engine = model[SearchKeys.engine]
+        let roomy = model.family != .small
         VStack(alignment: .leading, spacing: 10) {
             WidgetHeader(title: "Search", symbol: engine.symbol, color: .blue, trailing: engine.label)
+            Spacer(minLength: 0)
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search \(engine.label)…", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: roomy ? 15 : 13))
                     .onSubmit { go(engine) }
                     .disabled(context != .desktop)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, roomy ? 11 : 8)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.08)))
             if model.family != .small {
                 HStack(spacing: 6) {
                     ForEach([SearchEngine.google, .youtube, .wikipedia, .claude, .maps], id: \.self) { item in
                         Button { model.config[SearchKeys.engine] = item; if !query.isEmpty { go(item) } } label: {
                             Image(systemName: item.symbol)
-                                .font(.system(size: 12, weight: .semibold))
-                                .frame(width: 30, height: 24)
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(maxWidth: 52, minHeight: 28)
+                                .frame(maxWidth: .infinity)
                                 .background(Capsule().fill(item == engine ? Color.blue.opacity(0.25) : Color.primary.opacity(0.07)))
                         }
                         .buttonStyle(WidgetButtonStyle())
@@ -377,16 +380,35 @@ struct DictionaryWidget: View {
                 .scrollIndicators(.never)
             } else {
                 let (w, meaning) = WordBank.today()
-                VStack(alignment: .leading, spacing: 2) {
+                let big = model.family == .large || model.size == .tall
+                if !big { Spacer(minLength: 0) }
+                VStack(alignment: .leading, spacing: big ? 4 : 2) {
                     Text("Word of the day").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-                    Text(w).font(.system(size: model.family == .small ? 17 : 20, weight: .semibold, design: .serif)).fitLine()
-                    Text(meaning).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(3)
+                    Text(w)
+                        .font(.system(size: model.family == .small ? (big ? 24 : 17) : (big ? 34 : 24), weight: .semibold, design: .serif))
+                        .fitLine()
+                    Text(meaning).font(.system(size: big ? 13 : 11.5)).foregroundStyle(.secondary).lineLimit(3)
                 }
                 .onTapGesture { word = w; lookUp() }
+                // Tall and large widgets have room for the full dictionary entry.
+                if big, let entry = Self.entry(for: w) {
+                    Divider().opacity(0.5)
+                    Text(entry)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .clipped()
+                }
             }
             Spacer(minLength: 0)
         }
         .widgetPadding()
+    }
+
+    private static func entry(for word: String) -> String? {
+        let range = CFRange(location: 0, length: (word as NSString).length)
+        guard let found = DCSCopyTextDefinition(nil, word as CFString, range)?.takeRetainedValue() as String? else { return nil }
+        return tidy(found)
     }
 
     private func lookUp() {
@@ -472,15 +494,17 @@ struct ConverterWidget: View {
                     .buttonStyle(WidgetButtonStyle())
                     .help("Swap")
             }
+            Spacer(minLength: 0)
             HStack(spacing: 6) {
                 TextField("1", text: model.binding(ConverterKeys.value))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.system(size: model.family == .small ? 20 : 24, weight: .semibold, design: .rounded))
                 unitMenu(units, selected: from) { model.config[ConverterKeys.from] = $0 }
             }
+            Divider().opacity(0.4)
             HStack(spacing: 6) {
                 Text(Self.format(result))
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.system(size: model.family == .small ? 22 : 28, weight: .semibold, design: .rounded))
                     .foregroundStyle(style.tone(.teal))
                     .fitLine(0.5)
                     .textSelection(.enabled)
@@ -598,8 +622,10 @@ struct PasswordWidget: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             WidgetHeader(title: "Password", symbol: "key.fill", color: .green, trailing: strengthLabel)
+            Spacer(minLength: 0)
             Text(password.isEmpty ? " " : password)
-                .font(.system(size: model.family == .small ? 13 : 15, weight: .medium, design: .monospaced))
+                .contentTransition(.opacity)
+                .font(.system(size: model.family == .small ? 15 : 21, weight: .medium, design: .monospaced))
                 .lineLimit(model.family == .small ? 3 : 2)
                 .minimumScaleFactor(0.6)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -637,9 +663,13 @@ struct PasswordWidget: View {
     private var strengthColor: Color { strength > 0.75 ? .green : strength > 0.5 ? .yellow : .red }
     private var strengthLabel: String { strength > 0.75 ? "Strong" : strength > 0.5 ? "Okay" : "Weak" }
 
+    /// Copies, then swaps in a fresh password so the same one is never pasted twice.
     private func copy() {
         copyToClipboard(password)
         copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            withAnimation(.easeInOut(duration: 0.25)) { password = generate() }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
     }
 
@@ -682,55 +712,80 @@ struct ColorPickerWidget: View {
 
     var body: some View {
         let current = history.first
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Button(action: pick) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(current.map { Color(hex: UInt32($0, radix: 16) ?? 0) } ?? Color.primary.opacity(0.1))
-                        if current == nil {
-                            Image(systemName: "eyedropper").font(.system(size: 20, weight: .semibold))
+        Group {
+            if model.family == .small {
+                VStack(alignment: .leading, spacing: 6) {
+                    swatch(current)
+                    HStack(spacing: 4) {
+                        hexLabel(current, size: 14)
+                        Spacer(minLength: 0)
+                        Button(action: pick) { Image(systemName: "eyedropper").font(.system(size: 13, weight: .semibold)) }
+                            .buttonStyle(WidgetButtonStyle())
+                            .help("Pick a colour from anywhere on screen")
+                    }
+                }
+            } else {
+                HStack(spacing: 14) {
+                    swatch(current).aspectRatio(1, contentMode: .fit)
+                    VStack(alignment: .leading, spacing: 3) {
+                        hexLabel(current, size: 20)
+                        if let current, let value = UInt32(current, radix: 16) {
+                            let rgb = "rgb(\(value >> 16 & 255), \(value >> 8 & 255), \(value & 255))"
+                            Text(rgb)
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .fitLine(0.7)
+                                .onTapGesture { copy(rgb) }
                         }
-                    }
-                    .frame(width: 54, height: 54)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.15)))
-                }
-                .buttonStyle(WidgetButtonStyle())
-                .help("Pick a colour from anywhere on screen")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(current.map { "#" + $0 } ?? "Pick a colour")
-                        .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                        .onTapGesture { if let current { copy("#" + current) } }
-                    if let current, let value = UInt32(current, radix: 16) {
-                        Text("rgb(\(value >> 16 & 255), \(value >> 8 & 255), \(value & 255))")
-                            .font(.system(size: 10.5, design: .monospaced))
+                        Spacer(minLength: 0)
+                        if history.count > 1 {
+                            HStack(spacing: 6) {
+                                ForEach(history.dropFirst().prefix(6), id: \.self) { hex in
+                                    Circle()
+                                        .fill(Color(hex: UInt32(hex, radix: 16) ?? 0))
+                                        .frame(width: 24, height: 24)
+                                        .overlay(Circle().strokeBorder(Color.primary.opacity(0.15)))
+                                        .onTapGesture { copy("#" + hex) }
+                                        .help("#" + hex)
+                                }
+                            }
+                        }
+                        Button(action: pick) { Label("Pick a colour", systemImage: "eyedropper") }
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .buttonStyle(WidgetButtonStyle())
                             .foregroundStyle(.secondary)
-                            .onTapGesture { copy("rgb(\(value >> 16 & 255), \(value >> 8 & 255), \(value & 255))") }
                     }
-                    Button(action: pick) { Label("Pick", systemImage: "eyedropper") }
-                        .font(.system(size: 11, weight: .semibold))
-                        .buttonStyle(WidgetButtonStyle())
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            if model.family != .small && history.count > 1 {
-                HStack(spacing: 5) {
-                    ForEach(history.dropFirst().prefix(8), id: \.self) { hex in
-                        Circle()
-                            .fill(Color(hex: UInt32(hex, radix: 16) ?? 0))
-                            .frame(width: 20, height: 20)
-                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.15)))
-                            .onTapGesture { copy("#" + hex) }
-                            .help("#" + hex)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            Spacer(minLength: 0)
         }
         .overlay(alignment: .bottomTrailing) { CopiedBadge(visible: copied) }
         .animation(.spring(duration: 0.25), value: copied)
         .widgetPadding()
+    }
+
+    /// The big colour chip; click it to pick a new colour.
+    private func swatch(_ current: String?) -> some View {
+        Button(action: pick) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(current.map { Color(hex: UInt32($0, radix: 16) ?? 0) } ?? Color.primary.opacity(0.1))
+                if current == nil {
+                    Image(systemName: "eyedropper").font(.system(size: 22, weight: .semibold))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.15)))
+        }
+        .buttonStyle(WidgetButtonStyle())
+        .help("Pick a colour from anywhere on screen")
+    }
+
+    private func hexLabel(_ current: String?, size: CGFloat) -> some View {
+        Text(current.map { "#" + $0 } ?? "Pick a colour")
+            .font(.system(size: size, weight: .semibold, design: .monospaced))
+            .fitLine(0.6)
+            .onTapGesture { if let current { copy("#" + current) } }
     }
 
     private func pick() {

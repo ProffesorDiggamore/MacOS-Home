@@ -90,9 +90,16 @@ struct DesktopGrid {
             ?? NSScreen.screens.max { $0.frame.intersection(rect).area < $1.frame.intersection(rect).area }
     }
 
+    /// The screen below the menu bar, including the strip beside a bottom Dock, so the
+    /// bottom row can sit next to the Dock. Widgets on the desktop layer stay behind it.
+    static func area(of screen: NSScreen?) -> CGRect {
+        guard let screen else { return CGRect(x: 0, y: 0, width: 1440, height: 900) }
+        let visible = screen.visibleFrame
+        return CGRect(x: visible.minX, y: screen.frame.minY, width: visible.width, height: visible.maxY - screen.frame.minY)
+    }
+
     static func forRect(_ rect: CGRect) -> DesktopGrid {
-        let screen = screen(containing: rect) ?? NSScreen.main ?? NSScreen.screens.first
-        return DesktopGrid(bounds: screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
+        DesktopGrid(bounds: area(of: screen(containing: rect) ?? NSScreen.main ?? NSScreen.screens.first))
     }
 
     /// Where a widget of `size` near `rect` should go, avoiding `occupied`.
@@ -103,7 +110,7 @@ struct DesktopGrid {
             return grid.rect(at: cell, size: size)
         }
         for screen in NSScreen.screens {
-            let other = DesktopGrid(bounds: screen.visibleFrame)
+            let other = DesktopGrid(bounds: area(of: screen))
             if let cell = other.firstFree(size: size, occupied: occupied) { return other.rect(at: cell, size: size) }
         }
         return rect

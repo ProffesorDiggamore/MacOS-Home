@@ -94,7 +94,7 @@ final class AppController: NSObject, NSMenuDelegate {
     func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) -> WidgetModel {
         let chosen = size ?? kind.defaultSize
         let screen = NSScreen.main ?? NSScreen.screens.first
-        let grid = DesktopGrid(bounds: screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
+        let grid = DesktopGrid(bounds: DesktopGrid.area(of: screen))
         let occupied = store.widgets.map(\.frame)
         let rect = grid.firstFree(size: chosen, occupied: occupied).map { grid.rect(at: $0, size: chosen) }
             ?? DesktopGrid.place(grid.rect(at: .init(column: 0, row: 0), size: chosen), size: chosen, occupied: occupied)
@@ -138,7 +138,7 @@ final class AppController: NSObject, NSMenuDelegate {
     /// Packs every widget into the grid from the top-left, biggest first so nothing gets stranded.
     func arrangeWidgets() {
         let screen = NSScreen.main ?? NSScreen.screens.first
-        let grid = DesktopGrid(bounds: screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
+        let grid = DesktopGrid(bounds: DesktopGrid.area(of: screen))
         var placed: [CGRect] = []
         let ordered = store.widgets.sorted {
             let a = $0.size.cells, b = $1.size.cells
@@ -150,6 +150,70 @@ final class AppController: NSObject, NSMenuDelegate {
             placed.append(rect)
             panels[model.id]?.move(to: rect, animated: true)
         }
+    }
+
+    // MARK: Drag reflow
+
+    /// Where every other widget was when the drag began; each step is planned from these,
+    /// so widgets that were pushed aside slide back once the dragged one moves on.
+    private var dragOriginals: [(id: UUID, size: WidgetSize, rect: CGRect)] = []
+    private var dragPlan: [UUID: CGRect] = [:]
+
+    func beginDrag(_ id: UUID) {
+        dragOriginals = store.widgets.filter { $0.id != id }.map { ($0.id, $0.size, $0.frame) }
+        dragPlan = [:]
+    }
+
+    /// The slot the dragged widget takes if dropped now. Widgets in that slot slide to the
+    /// nearest free spot, like app icons on an iPhone; if there's no room for them, the
+    /// dragged widget takes the nearest free slot instead and nothing moves.
+    func reflow(dragging frame: CGRect, size: WidgetSize) -> CGRect {
+        let grid = DesktopGrid.forRect(frame)
+        let target = grid.rect(at: grid.nearestCell(to: frame, size: size), size: size)
+        var plan: [UUID: CGRect] = [:]
+        var occupied = [target]
+        var bumped: [(id: UUID, size: WidgetSize, rect: CGRect)] = []
+        for other in dragOriginals {
+            if other.rect.insetBy(dx: 2, dy: 2).intersects(target) {
+                bumped.append(other)
+            } else {
+                occupied.append(other.rect)
+            }
+        }
+        bumped.sort { $0.rect.maxY != $1.rect.maxY ? $0.rect.maxY > $1.rect.maxY : $0.rect.minX < $1.rect.minX }
+        for other in bumped {
+            let otherGrid = DesktopGrid.forRect(other.rect)
+            guard let cell = otherGrid.nearestFree(to: otherGrid.nearestCell(to: other.rect, size: other.size),
+                                                   size: other.size, occupied: occupied) else {
+                showPlan([:])
+                return DesktopGrid.place(frame, size: size, occupied: dragOriginals.map(\.rect))
+            }
+            let moved = otherGrid.rect(at: cell, size: other.size)
+            plan[other.id] = moved
+            occupied.append(moved)
+        }
+        showPlan(plan)
+        return target
+    }
+
+    /// Slides pushed-aside widgets to their planned spots (and the rest back home) without saving yet.
+    private func showPlan(_ plan: [UUID: CGRect]) {
+        for other in dragOriginals {
+            let rect = plan[other.id] ?? other.rect
+            if (dragPlan[other.id] ?? other.rect) != rect {
+                panels[other.id]?.preview(at: rect)
+            }
+        }
+        dragPlan = plan
+    }
+
+    /// Saves where the pushed-aside widgets ended up.
+    func endDrag() {
+        for (id, rect) in dragPlan {
+            panels[id]?.move(to: rect, animated: false)
+        }
+        dragOriginals = []
+        dragPlan = [:]
     }
 
     /// Moves saved widgets onto the grid once at launch, pulling apart any that overlap.

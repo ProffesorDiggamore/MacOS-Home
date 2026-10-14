@@ -70,6 +70,48 @@ struct ClockWidget: View {
         let showDate = model[ClockKeys.showDate]
         let place = model[ClockKeys.timeZone].isEmpty ? nil : zone.cityName
 
+        if model.size == .tall {
+            // Hours over minutes, big enough to fill the tall shape.
+            let parts = time.components(separatedBy: ":")
+            VStack(spacing: 0) {
+                Text(DateFormats.string(date, template: "EEEE", timeZone: zone).uppercased())
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(style.tone(accent))
+                    .fitLine()
+                if let place {
+                    Text(place).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).fitLine()
+                }
+                Spacer(minLength: 0)
+                ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                    Text(part)
+                        .font(fontChoice.font(size: parts.count > 2 ? 58 : 84))
+                        .monospacedDigit()
+                        .foregroundStyle(index == 0 ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.75)))
+                        .fitLine(0.4)
+                        .padding(.vertical, -6)
+                }
+                if let meridiem {
+                    Text(meridiem).font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 6)
+                }
+                Spacer(minLength: 0)
+                if showDate {
+                    Text(DateFormats.string(date, template: "MMMd", timeZone: zone))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .fitLine()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .widgetPadding(16)
+        } else {
+            standard(date, zone: zone, time: time, meridiem: meridiem, showDate: showDate, place: place)
+        }
+    }
+
+    @ViewBuilder
+    private func standard(_ date: Date, zone: TimeZone, time: String, meridiem: String?, showDate: Bool, place: String?) -> some View {
+        let seconds = model[ClockKeys.showSeconds]
+        let fontChoice = model[ClockKeys.design]
         switch model.family {
         case .small:
             VStack(alignment: .leading, spacing: 2) {
@@ -301,6 +343,32 @@ struct AnalogClockWidget: View {
         let face = AnalogClockFace(date: date, timeZone: zone, showSeconds: model[AnalogKeys.showSeconds],
                                    numerals: model[AnalogKeys.numerals], dark: dark,
                                    secondColor: style == .tinted ? .white : .orange)
+        if model.size == .tall {
+            VStack(spacing: 8) {
+                Text(DateFormats.string(date, template: "EEEE", timeZone: zone).uppercased())
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .fitLine()
+                Spacer(minLength: 0)
+                face
+                Spacer(minLength: 0)
+                Text(DateFormats.shortTime(date, timeZone: zone))
+                    .font(.system(size: 26, weight: .semibold))
+                    .monospacedDigit()
+                    .fitLine(0.6)
+                Text(DateFormats.string(date, template: "MMMd", timeZone: zone))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .fitLine()
+            }
+            .padding(12)
+        } else {
+            standard(date, zone: zone, face: face)
+        }
+    }
+
+    @ViewBuilder
+    private func standard(_ date: Date, zone: TimeZone, face: AnalogClockFace) -> some View {
         switch model.family {
         case .small:
             face.padding(10)
@@ -321,6 +389,22 @@ struct AnalogClockWidget: View {
                         .fitLine()
                 }
                 Spacer(minLength: 0)
+                if model.size == .wide {
+                    // The wide shape has room for the date, calendar-style.
+                    let calendar = Calendar.current
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(DateFormats.string(date, template: "MMMM", timeZone: zone).uppercased())
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.red)
+                        Text(DateFormats.string(date, template: "d", timeZone: zone))
+                            .font(.system(size: 54, weight: .light))
+                            .monospacedDigit()
+                        Text("Week \(calendar.component(.weekOfYear, from: date)) · Day \(calendar.ordinality(of: .day, in: .year, for: date) ?? 0)")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.trailing, 10)
+                }
             }
             .padding(12)
         case .large:
@@ -353,10 +437,12 @@ struct WorldClockWidget: View {
 
     var body: some View {
         Ticking(everySecond: model.family == .medium) { date in
-            switch model.family {
+            switch model.size {
             case .small: list(date, limit: 4, compact: true)
-            case .medium: faces(date)
-            case .large: list(date, limit: 7, compact: false)
+            case .tall: list(date, limit: 6, compact: true, fill: true)
+            case .medium, .wide: faces(date)
+            case .extraLarge: faces(date, big: true)
+            default: list(date, limit: 7, compact: false, fill: true)
             }
         }
     }
@@ -391,18 +477,24 @@ struct WorldClockWidget: View {
         return (6..<18).contains(hour)
     }
 
-    private func faces(_ date: Date) -> some View {
+    private func faces(_ date: Date, big: Bool = false) -> some View {
         HStack(spacing: 8) {
-            ForEach(Array(zones.prefix(4).enumerated()), id: \.offset) { _, zone in
-                VStack(spacing: 6) {
-                    AnalogClockFace(date: date, timeZone: zone, showSeconds: true, numerals: .hidden,
+            ForEach(Array(zones.prefix(big ? 5 : 4).enumerated()), id: \.offset) { _, zone in
+                VStack(spacing: big ? 10 : 6) {
+                    AnalogClockFace(date: date, timeZone: zone, showSeconds: true, numerals: big ? .quarters : .hidden,
                                     dark: !isDaytime(date, zone))
-                        .frame(width: 66, height: 66)
+                        .frame(width: big ? 150 : 66, height: big ? 150 : 66)
                     Text(zone.cityName)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: big ? 16 : 11, weight: .semibold))
                         .fitLine(0.7)
+                    if big {
+                        Text(time(date, zone))
+                            .font(.system(size: 22, weight: .medium))
+                            .monospacedDigit()
+                            .fitLine(0.7)
+                    }
                     Text(dayAndOffset(date, zone))
-                        .font(.system(size: 9.5))
+                        .font(.system(size: big ? 12 : 9.5))
                         .foregroundStyle(.secondary)
                         .fitLine(0.7)
                 }
@@ -413,35 +505,41 @@ struct WorldClockWidget: View {
         .padding(.vertical, 14)
     }
 
-    private func list(_ date: Date, limit: Int, compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 6 : 10) {
+    /// With `fill`, rows share the height evenly and grow when there are only a few cities.
+    private func list(_ date: Date, limit: Int, compact: Bool, fill: Bool = false) -> some View {
+        let shown = Array(zones.prefix(limit))
+        let roomy = fill && !compact && shown.count <= 5
+        return VStack(alignment: .leading, spacing: compact ? 6 : 10) {
             WidgetHeader(title: "World Clock", symbol: "globe", color: .orange)
-            ForEach(Array(zones.prefix(limit).enumerated()), id: \.offset) { _, zone in
-                HStack(spacing: 8) {
+            ForEach(Array(shown.enumerated()), id: \.offset) { index, zone in
+                if fill && index > 0 { Divider().opacity(0.4) }
+                HStack(spacing: roomy ? 12 : 8) {
                     if !compact {
                         AnalogClockFace(date: date, timeZone: zone, showSeconds: false, numerals: .hidden,
                                         dark: !isDaytime(date, zone))
-                            .frame(width: 30, height: 30)
+                            .frame(width: roomy ? 46 : 30, height: roomy ? 46 : 30)
                     }
-                    VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(zone.cityName)
-                            .font(.system(size: compact ? 12 : 14, weight: .semibold))
+                            .font(.system(size: compact ? (fill ? 14 : 12) : (roomy ? 17 : 14), weight: .semibold))
                             .fitLine(0.7)
-                        if !compact {
+                        if !compact || fill {
                             Text(dayAndOffset(date, zone))
-                                .font(.system(size: 11))
+                                .font(.system(size: roomy ? 12.5 : 11))
                                 .foregroundStyle(.secondary)
+                                .fitLine(0.7)
                         }
                     }
                     Spacer(minLength: 4)
                     Text(time(date, zone))
-                        .font(.system(size: compact ? 13 : 20, weight: compact ? .medium : .regular))
+                        .font(.system(size: compact ? (fill ? 15 : 13) : (roomy ? 28 : 20), weight: compact ? .medium : .regular))
                         .monospacedDigit()
-                        .foregroundStyle(compact ? HierarchicalShapeStyle.secondary : HierarchicalShapeStyle.primary)
+                        .foregroundStyle(compact && !fill ? HierarchicalShapeStyle.secondary : HierarchicalShapeStyle.primary)
                         .fitLine(0.7)
                 }
+                .frame(maxHeight: fill ? .infinity : nil)
             }
-            Spacer(minLength: 0)
+            if !fill { Spacer(minLength: 0) }
         }
         .widgetPadding()
     }

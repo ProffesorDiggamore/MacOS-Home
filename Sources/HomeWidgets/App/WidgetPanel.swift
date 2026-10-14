@@ -126,6 +126,7 @@ final class WidgetPanelController {
     private let hover = HoverTracker()
     private var hideWork: DispatchWorkItem?
     private var lastGhost: CGRect?
+    private var lastCell: CGRect?
 
     init(model: WidgetModel) {
         self.model = model
@@ -140,7 +141,7 @@ final class WidgetPanelController {
         panel.becomesKeyOnlyIfNeeded = true
         panel.isMovableByWindowBackground = false
         panel.animationBehavior = .none
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+        panel.collectionBehavior = Self.behavior(allDesktops: appearance.allDesktops)
         panel.title = model.kind.title
 
         let host = WidgetHostingView(rootView: WidgetView(model: model))
@@ -190,7 +191,20 @@ final class WidgetPanelController {
         panel.close()
     }
 
+    /// Windows on every Space are only drawn once a Space switch finishes, so by default
+    /// widgets belong to one desktop and slide in with it like regular windows.
+    private static func behavior(allDesktops: Bool) -> NSWindow.CollectionBehavior {
+        allDesktops ? [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+                    : [.stationary, .ignoresCycle, .fullScreenNone]
+    }
+
     func applySettings() {
+        let behavior = Self.behavior(allDesktops: appearance.allDesktops)
+        if panel.collectionBehavior != behavior {
+            panel.collectionBehavior = behavior
+            // Re-showing moves a widget onto the desktop you're looking at.
+            if panel.isVisible { panel.orderOut(nil) }
+        }
         panel.level = appearance.layer.windowLevel
         panel.isLocked = appearance.locked
         let style = model.styleOverride ?? appearance.style
@@ -259,22 +273,40 @@ final class WidgetPanelController {
         model.runtime.isDragging = true
         DragState.shared.isDragging = true
         lastGhost = nil
+        lastCell = nil
+        AppController.shared.beginDrag(model.id)
     }
 
     private func dragMoved() {
-        let target = DesktopGrid.place(panel.frame, size: model.size, occupied: AppController.shared.widgetFrames(excluding: model.id))
+        // Only re-plan when the pointer crosses into a different grid slot.
+        let grid = DesktopGrid.forRect(panel.frame)
+        let cell = grid.rect(at: grid.nearestCell(to: panel.frame, size: model.size), size: model.size)
+        guard cell != lastCell else { return }
+        lastCell = cell
+        let target = AppController.shared.reflow(dragging: panel.frame, size: model.size)
         guard target != lastGhost else { return }
         lastGhost = target
         DropGhost.shared.show(target, below: panel)
     }
 
     private func dragEnded() {
-        let target = DesktopGrid.place(panel.frame, size: model.size, occupied: AppController.shared.widgetFrames(excluding: model.id))
+        let target = AppController.shared.reflow(dragging: panel.frame, size: model.size)
+        AppController.shared.endDrag()
         DropGhost.shared.hide()
         move(to: target, animated: true)
         model.runtime.isDragging = false
         DragState.shared.isDragging = false
         lastGhost = nil
+        lastCell = nil
+    }
+
+    /// Slides the panel during someone else's drag without saving the position.
+    func preview(at rect: CGRect) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(rect, display: true)
+        }
     }
 
     func move(to rect: CGRect, animated: Bool) {
@@ -293,7 +325,7 @@ final class WidgetPanelController {
     /// Makes sure the widget is on a connected screen (after unplugging a display, say).
     func ensureVisible(occupied: [CGRect]) {
         let rect = model.frame
-        let onScreen = NSScreen.screens.contains { $0.visibleFrame.intersects(rect.insetBy(dx: 30, dy: 30)) }
+        let onScreen = NSScreen.screens.contains { DesktopGrid.area(of: $0).intersects(rect.insetBy(dx: 30, dy: 30)) }
         if !onScreen {
             move(to: DesktopGrid.place(rect, size: model.size, occupied: occupied), animated: false)
         }

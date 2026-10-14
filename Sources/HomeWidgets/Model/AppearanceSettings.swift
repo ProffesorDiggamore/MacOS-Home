@@ -219,6 +219,8 @@ final class AppearanceSettings: ObservableObject {
     @Published var layer: WidgetLayer { didSet { defaults.set(layer.rawValue, forKey: "layer") } }
     @Published var locked: Bool { didSet { defaults.set(locked, forKey: "locked") } }
     @Published var hidden: Bool { didSet { defaults.set(hidden, forKey: "hidden") } }
+    /// Off: widgets belong to one desktop and slide in with it. On: they follow you to every desktop.
+    @Published var allDesktops: Bool { didSet { defaults.set(allDesktops, forKey: "allDesktops") } }
     @Published var refreshInterval: Double { didSet { defaults.set(refreshInterval, forKey: "refreshInterval") } }
     @Published var temperatureUnit: TemperatureUnit { didSet { defaults.set(temperatureUnit.rawValue, forKey: "temperatureUnit") } }
     @Published var showInDock: Bool { didSet { defaults.set(showInDock, forKey: "showInDock") } }
@@ -239,7 +241,8 @@ final class AppearanceSettings: ObservableObject {
         layer = WidgetLayer(rawValue: defaults.string(forKey: "layer") ?? "") ?? .desktop
         locked = defaults.bool(forKey: "locked")
         hidden = defaults.bool(forKey: "hidden")
-        refreshInterval = defaults.object(forKey: "refreshInterval") as? Double ?? 1.0
+        allDesktops = defaults.bool(forKey: "allDesktops")
+        refreshInterval = defaults.object(forKey: "refreshInterval") as? Double ?? 2.0
         temperatureUnit = TemperatureUnit(rawValue: defaults.string(forKey: "temperatureUnit") ?? "") ?? .system
         showInDock = defaults.object(forKey: "showInDock") as? Bool ?? true
         showMenuBarIcon = defaults.object(forKey: "showMenuBarIcon") as? Bool ?? true

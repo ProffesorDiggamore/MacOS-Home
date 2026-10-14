@@ -59,10 +59,12 @@ struct GitHubWidget: View {
             if !isSample && !github.isConnected {
                 ConnectGitHubMessage()
             } else {
-                switch model.family {
+                switch model.size {
                 case .small: small
-                case .medium: list(limit: 3)
-                case .large: list(limit: 8)
+                case .tall: list(limit: 6)
+                case .medium, .wide: list(limit: 3)
+                case .extraLarge: list(limit: 7)
+                default: list(limit: 11)
                 }
             }
         }
@@ -212,7 +214,9 @@ struct ContributionsWidget: View {
     }
 
     private var content: some View {
-        let weeks = max(5, min(53, Int((model.size.dimensions.width - 28) / 14)))
+        // Big and tall widgets show the whole year, wrapped into bands so the squares stay large.
+        let fullYear = model.family == .large || model.size == .tall
+        let weeks = fullYear ? 53 : max(5, min(53, Int((model.size.dimensions.width - 28) / 14)))
         let visible = Array(days.suffix(weeks * 7 - (7 - todayWeekdayIndex - 1)))
         let total = isSample ? 1_284 : github.totalContributions
         let streak = isSample ? 12 : github.currentStreak
@@ -228,7 +232,8 @@ struct ContributionsWidget: View {
                     .font(.system(size: 12, weight: .semibold))
                     .help("Current streak (days)")
             }
-            ContributionGrid(days: visible, weeks: weeks, color: color)
+            ContributionGrid(days: visible, weeks: weeks, color: color, wraps: fullYear)
+                .frame(maxHeight: fullYear ? .infinity : nil)
             if model.family == .large {
                 Divider().opacity(0.5)
                 let best = days.max(by: { $0.count < $1.count })
@@ -237,7 +242,6 @@ struct ContributionsWidget: View {
                     statBlock("Streak", "\(streak) days")
                     statBlock("Best day", "\(best?.count ?? 0)")
                 }
-                Spacer(minLength: 0)
             }
         }
         .widgetPadding()
@@ -262,23 +266,56 @@ struct ContributionGrid: View {
     let days: [GitHubService.Day]
     let weeks: Int
     let color: (Int) -> Color
+    /// Split the weeks into stacked bands when that makes the squares bigger (tall widgets).
+    var wraps = false
+
+    /// The number of bands that gives the biggest squares in `size`.
+    private static func layout(weeks: Int, in size: CGSize, gap: CGFloat, bandGap: CGFloat, wraps: Bool) -> (bands: Int, perBand: Int, cell: CGFloat) {
+        var best = (bands: 1, perBand: weeks, cell: CGFloat(0))
+        for bands in 1...(wraps ? 5 : 1) {
+            let perBand = (weeks + bands - 1) / bands
+            let byWidth = (size.width - gap * CGFloat(perBand - 1)) / CGFloat(perBand)
+            let byHeight = (size.height - bandGap * CGFloat(bands - 1) - gap * 6 * CGFloat(bands)) / CGFloat(7 * bands)
+            let cell = min(byWidth, byHeight)
+            if cell > best.cell { best = (bands, perBand, cell) }
+        }
+        return best
+    }
 
     var body: some View {
         let levels = days.map(\.level)
         let paint = color
         let columns = weeks
-        return Canvas { context, size in
+        let wraps = wraps
+        let canvas = Canvas { context, size in
             let gap: CGFloat = 2.5
-            let cell = min((size.width - gap * CGFloat(columns - 1)) / CGFloat(columns), (size.height - gap * 6) / 7)
+            let bandGap: CGFloat = 10
+            let fit = Self.layout(weeks: columns, in: size, gap: gap, bandGap: bandGap, wraps: wraps)
+            let cell = fit.cell
+            let bandHeight = 7 * cell + 6 * gap
+            // Centre the squares in whatever space is left over.
+            let usedWidth = CGFloat(fit.perBand) * (cell + gap) - gap
+            let usedHeight = CGFloat(fit.bands) * (bandHeight + bandGap) - bandGap
+            context.translateBy(x: max(0, (size.width - usedWidth) / 2), y: wraps ? max(0, (size.height - usedHeight) / 2) : 0)
             for (index, level) in levels.enumerated() {
-                let column = index / 7
+                let week = index / 7
                 let row = index % 7
-                guard column < columns else { break }
-                let rect = CGRect(x: CGFloat(column) * (cell + gap), y: CGFloat(row) * (cell + gap), width: cell, height: cell)
+                guard week < columns else { break }
+                let band = week / fit.perBand
+                let column = week % fit.perBand
+                let rect = CGRect(x: CGFloat(column) * (cell + gap),
+                                  y: CGFloat(band) * (bandHeight + bandGap) + CGFloat(row) * (cell + gap),
+                                  width: cell, height: cell)
                 context.fill(Path(roundedRect: rect, cornerRadius: cell * 0.22), with: .color(paint(level)))
             }
         }
-        .aspectRatio(CGFloat(columns) / 7, contentMode: .fit)
+        return Group {
+            if wraps {
+                canvas
+            } else {
+                canvas.aspectRatio(CGFloat(columns) / 7, contentMode: .fit)
+            }
+        }
     }
 }
 
@@ -355,6 +392,7 @@ struct CairnWidget: View {
                               detail: "Right-click › Edit Widget and enter the repo Cairn syncs to (like you/Cairn).")
             } else {
                 switch model.family {
+                case .small where model.size == .tall: tall
                 case .small: small
                 case .medium: medium
                 case .large: large
@@ -499,6 +537,16 @@ struct CairnWidget: View {
         }
     }
 
+    /// Tall: your most recent notes, top to bottom.
+    private var tall: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            notes(limit: 8)
+            Spacer(minLength: 0)
+        }
+        .widgetPadding()
+    }
+
     private var medium: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -514,28 +562,30 @@ struct CairnWidget: View {
         let text: String? = show == .today ? (vault.todayText ?? "") : (show == .pinned ? vault.pinnedText : nil)
         return VStack(alignment: .leading, spacing: 8) {
             header
-            if let text {
-                Text(show == .today ? "Today · \(DateFormats.string(Date(), template: "EEEEMMMd"))" : (model[CairnKeys.pinned] as NSString).deletingPathExtension)
+            let title = show == .today ? "Today · \(DateFormats.string(Date(), template: "EEEEMMMd"))" : (model[CairnKeys.pinned] as NSString).deletingPathExtension
+            if let text, !text.isEmpty {
+                Text(title)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
+                // The note takes whatever room the recent list leaves.
                 ScrollView {
-                    if text.isEmpty {
-                        Text("Nothing yet today. Add something below.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        MarkdownText(text).frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    MarkdownText(text).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollIndicators(.never)
-                .frame(maxHeight: model.size == .portrait ? 260 : 140)
+                .frame(maxHeight: .infinity)
                 Divider().opacity(0.5)
-                notes(limit: model.size == .portrait ? 8 : 4)
+                notes(limit: model.size == .portrait ? 6 : 3)
             } else {
-                notes(limit: 9)
+                if text != nil {
+                    Text("\(title) — nothing yet. Add something below.")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .fitLine(0.8)
+                }
+                // No note to show, so the recent list fills the space instead of a blank box.
+                notes(limit: model.size == .portrait ? 15 : 9)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
             captureField
         }
         .widgetPadding()
@@ -605,9 +655,10 @@ struct MailWidget: View {
                     WidgetMessage(symbol: "envelope.badge.shield.half.filled", title: "Mail needs permission", detail: error)
                 } else {
                     switch model.family {
+                    case .small where model.size == .tall: list(now, limit: 5)
                     case .small: small(now)
                     case .medium: list(now, limit: 3)
-                    case .large: list(now, limit: 8)
+                    case .large: list(now, limit: model.size == .portrait ? 12 : 8)
                     }
                 }
             }

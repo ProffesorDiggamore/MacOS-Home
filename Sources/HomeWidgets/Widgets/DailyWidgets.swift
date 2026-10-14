@@ -107,6 +107,7 @@ struct AirQualityWidget: View {
             WidgetHeader(title: "Air Quality", symbol: "aqi.medium", color: .mint, trailing: report?.place)
             if let report {
                 let (label, color) = AirQualityService.level(report.aqi)
+                Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: 10) {
                     RingGauge(value: min(1, Double(report.aqi) / 300), color: color, lineWidth: 6) {
                         Text("\(report.aqi)").font(.system(size: 20, weight: .bold, design: .rounded))
@@ -117,18 +118,20 @@ struct AirQualityWidget: View {
                         Text("US AQI").font(.system(size: 10)).foregroundStyle(.secondary)
                     }
                 }
-                if model.family != .small {
-                    HStack(spacing: 12) {
-                        stat("PM2.5", String(format: "%.0f", report.pm25))
+                Spacer(minLength: 0)
+                // Small widgets show the two readings people check most; bigger ones show all four.
+                HStack(spacing: 12) {
+                    stat("PM2.5", String(format: "%.0f", report.pm25))
+                    if model.family != .small {
                         stat("PM10", String(format: "%.0f", report.pm10))
                         stat("Ozone", String(format: "%.0f", report.ozone))
-                        stat("UV", String(format: "%.0f", report.uv))
                     }
+                    stat("UV", String(format: "%.0f", report.uv))
                 }
             } else {
                 Text(service.errors[key] ?? "Loading…").font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
         .widgetPadding()
         .onAppear { if context == .desktop { service.refresh(city: key) } }
@@ -236,7 +239,8 @@ struct GitHubRepoWidget: View {
                 if model.family != .small && !stats.description.isEmpty {
                     Text(stats.description).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                 }
-                HStack(spacing: 12) {
+                Spacer(minLength: 0)
+                HStack(spacing: model.family == .small ? 10 : 18) {
                     count("star.fill", stats.stars, .yellow)
                     count("tuningfork", stats.forks, .blue)
                     count("smallcircle.filled.circle", stats.issues, .green)
@@ -264,9 +268,10 @@ struct GitHubRepoWidget: View {
     }
 
     private func count(_ symbol: String, _ value: Int, _ color: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(style.tone(color))
-            Text(Fmt.count(value)).font(.system(size: 13, weight: .semibold, design: .rounded))
+        let small = model.family == .small
+        return HStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: small ? 11 : 14)).foregroundStyle(style.tone(color))
+            Text(Fmt.count(value)).font(.system(size: small ? 15 : 20, weight: .semibold, design: .rounded))
         }
     }
 }
@@ -294,14 +299,25 @@ struct WaterWidget: View {
         let goal = max(1, model[WaterKeys.goal])
         let level = min(1, Double(count) / Double(goal))
         HStack(spacing: 12) {
-            Animated(fps: visible ? 24 : 1) { date in
+            Animated(fps: visible ? 12 : 1) { date in
                 WaterGlass(level: level, phase: date.timeIntervalSinceReferenceDate)
             }
             .frame(width: model.family == .small ? 54 : 64)
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(count) of \(goal)").font(.system(size: 20, weight: .bold, design: .rounded))
+                Text("\(count) of \(goal)").font(.system(size: model.family == .small ? 20 : 26, weight: .bold, design: .rounded))
                 Text(count >= goal ? "Goal reached 💧" : "glasses today").font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
+                // A drop for every glass, so the medium widget shows the whole day at a glance.
+                if model.family != .small {
+                    HStack(spacing: 5) {
+                        ForEach(0..<min(goal, 12), id: \.self) { index in
+                            Image(systemName: "drop.fill")
+                                .font(.system(size: goal > 10 ? 14 : 18))
+                                .foregroundStyle(index < count ? Color.cyan : Color.primary.opacity(0.15))
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
                 HStack(spacing: 8) {
                     Button { change(-1) } label: { Image(systemName: "minus.circle.fill") }
                     Button { change(1) } label: { Image(systemName: "plus.circle.fill").foregroundStyle(.cyan) }
@@ -400,10 +416,11 @@ struct QuoteWidget: View {
         let quote = QuoteBank.quotes[((day + offset) % QuoteBank.quotes.count + QuoteBank.quotes.count) % QuoteBank.quotes.count]
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: "quote.opening").font(.system(size: 16, weight: .bold)).foregroundStyle(.secondary)
+            // Starts big and shrinks only as much as it must, so short quotes fill the widget.
             Text(quote.0)
-                .font(.system(size: model.family == .small ? 14 : 17, weight: .medium, design: .serif))
-                .minimumScaleFactor(0.6)
-            Spacer(minLength: 0)
+                .font(.system(size: model.family == .small ? 22 : 34, weight: .medium, design: .serif))
+                .minimumScaleFactor(0.3)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             HStack {
                 Text("— " + quote.1).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()

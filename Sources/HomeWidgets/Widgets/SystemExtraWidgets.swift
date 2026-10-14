@@ -282,21 +282,36 @@ struct IPAddressWidget: View {
         let external = context == .gallery ? "203.0.113.42" : info.publicAddress
         VStack(alignment: .leading, spacing: 7) {
             WidgetHeader(title: "IP Address", symbol: "network", color: .teal, trailing: copied == nil ? nil : "Copied")
-            row("Local", local.first?.1 ?? "Not connected")
-            row("Public", external ?? "…")
-            if model.family != .small {
-                row("Mac", context == .gallery ? "Landon's MacBook Pro" : info.hostName)
+            if model.family == .small {
+                row("Local", local.first?.1 ?? "Not connected")
+                row("Public", external ?? "…")
+                Spacer(minLength: 0)
+            } else {
+                // Two columns, spread over the whole widget.
+                Spacer(minLength: 0)
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        row("Local", local.first?.1 ?? "Not connected", large: true)
+                        row("Public", external ?? "…", large: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 12) {
+                        row("Mac", context == .gallery ? "Landon's MacBook Pro" : info.hostName, large: true)
+                        row("Interface", local.first.map { $0.0 } ?? "—", large: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
         .widgetPadding()
         .monitoring(if: context == .desktop, info)
     }
 
-    private func row(_ title: String, _ value: String) -> some View {
+    private func row(_ title: String, _ value: String, large: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 14, weight: .semibold, design: .monospaced)).fitLine(0.6)
+            Text(title).font(.system(size: large ? 11 : 10, weight: .semibold)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: large ? 17 : 14, weight: .semibold, design: .monospaced)).fitLine(0.6)
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -357,6 +372,11 @@ final class LatencyMonitor: PollingMonitor {
 
 struct InternetWidget: View {
     @ObservedObject var model: WidgetModel
+
+    private static let sampleHistory: [Double] = (0..<40).map { (index: Int) -> Double in
+        let wave: Double = 9 * sin(Double(index) * 0.7)
+        return 18 + wave + Double(index % 5)
+    }
     @ObservedObject private var monitor = LatencyMonitor.shared
     @Environment(\.widgetContext) private var context
     @Environment(\.widgetStyle) private var style
@@ -375,10 +395,10 @@ struct InternetWidget: View {
             Text(value == nil ? "Can't reach the internet" : value! < 60 ? "Fast and steady" : value! < 150 ? "A little slow" : "Laggy right now")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            Sparkline(values: context == .gallery ? [22, 18, 25, 19, 17, 30, 21, 18, 16, 19] : monitor.history.values,
+            // The graph takes all the room left over.
+            Sparkline(values: context == .gallery ? Self.sampleHistory : monitor.history.values,
                       color: color, maxValue: max(100, monitor.history.peak))
-                .frame(height: model.family == .small ? 26 : 34)
+                .frame(minHeight: 26, maxHeight: .infinity)
         }
         .widgetPadding()
         .monitoring(if: context == .desktop, monitor)

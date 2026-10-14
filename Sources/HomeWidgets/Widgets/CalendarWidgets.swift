@@ -372,6 +372,24 @@ struct YearProgressWidget: View {
         let tone = style.tone(accent)
 
         switch model.family {
+        case .small where model.size == .tall:
+            // The dots fill the middle of the tall shape.
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(year))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(tone)
+                DayDots(total: daysInYear, filled: dayOfYear, color: tone)
+                    .frame(maxHeight: .infinity)
+                Text(String(format: "%.1f%%", yearFraction * 100))
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .fitLine(0.5)
+                Text("Day \(dayOfYear) of \(daysInYear)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .widgetPadding(16)
         case .small:
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(year))
@@ -413,7 +431,7 @@ struct YearProgressWidget: View {
                         .monospacedDigit()
                 }
                 DayDots(total: daysInYear, filled: dayOfYear, color: tone)
-                    .frame(height: 150)
+                    .frame(minHeight: 150, maxHeight: .infinity)
                 ProgressRow(label: "Month", value: fraction(.month, now), color: tone)
                 ProgressRow(label: "Week", value: fraction(.weekOfYear, now), color: tone)
                 ProgressRow(label: "Today", value: fraction(.day, now), color: tone)

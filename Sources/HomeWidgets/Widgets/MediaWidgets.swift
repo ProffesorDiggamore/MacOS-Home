@@ -7,6 +7,7 @@ struct NowPlayingWidget: View {
     @ObservedObject var model: WidgetModel
     @ObservedObject private var player = NowPlayingService.shared
     @Environment(\.widgetContext) private var context
+    @Environment(\.widgetIsVisible) private var visible
 
     private var isSample: Bool { context == .gallery }
     private var track: NowPlayingService.Track? { isSample ? NowPlayingService.sample : player.track }
@@ -32,13 +33,24 @@ struct NowPlayingWidget: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
+                    .blur(radius: player.artworkLoading ? 14 : 0)
+                    .opacity(player.artworkLoading ? 0.6 : 1)
+                    .scaleEffect(player.artworkLoading ? 1.08 : 1)
             } else {
                 LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
                     .overlay(Image(systemName: "music.note").font(.system(size: 24, weight: .semibold)).foregroundStyle(Color.white))
             }
         }
+        .animation(.easeInOut(duration: 0.22), value: player.artworkLoading)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+    }
+
+    /// Moves smoothly between samples instead of jumping every few seconds.
+    private func progressBar(_ track: NowPlayingService.Track) -> some View {
+        TimelineView(.animation(minimumInterval: 1, paused: !track.isPlaying || !visible)) { timeline in
+            BarMeter(value: track.progress(at: timeline.date), color: .primary, height: 4)
+        }
     }
 
     private var controls: some View {
@@ -92,7 +104,7 @@ struct NowPlayingWidget: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                BarMeter(value: track.progress, color: .primary, height: 4)
+                progressBar(track)
                 controls.frame(maxWidth: .infinity)
             }
         }
@@ -126,7 +138,8 @@ struct VerseWidget: View {
     @ViewBuilder
     private func content(_ now: Date) -> some View {
         let verse = verse(for: now)
-        let textSize: CGFloat = model.family == .small ? 13 : (model.family == .medium ? 15 : 20)
+        // Start large and let long verses shrink, so short ones fill the widget.
+        let textSize: CGFloat = [WidgetSize.small: 15, .tall: 17, .medium: 18, .wide: 22, .large: 24, .portrait: 26, .extraLarge: 30][model.size] ?? 18
         VStack(alignment: .leading, spacing: model.family == .large ? 12 : 6) {
             HStack(spacing: 5) {
                 Image(systemName: "book.closed.fill")
@@ -144,15 +157,14 @@ struct VerseWidget: View {
                 .help("Show another verse")
             }
             .foregroundStyle(style.tone(Color(hex: 0xB07A3B)))
-            Spacer(minLength: 0)
             Text(verse.text)
                 .font(.system(size: textSize, weight: .regular, design: .serif))
                 .lineSpacing(2)
-                .minimumScaleFactor(0.55)
+                .minimumScaleFactor(0.35)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             Text("— \(verse.reference) (KJV)")
                 .font(.system(size: model.family == .small ? 11 : 12.5, weight: .semibold, design: .serif))
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
         }
         .widgetPadding(model.family == .large ? 22 : 16)
     }

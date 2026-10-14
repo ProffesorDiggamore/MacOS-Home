@@ -41,9 +41,15 @@ class PollingMonitor: ObservableObject {
             .sink { [weak self] _ in self?.schedule() }
     }
 
+    /// Picks up a changed `interval` (e.g. a player that started or stopped playing).
+    func reschedule() {
+        if isActive { schedule() }
+    }
+
     private func schedule() {
         let every = max(0.5, interval)
-        timer = Timer.publish(every: every, tolerance: every * 0.15, on: .main, in: .common)
+        // Generous tolerance lets macOS fire several monitors' timers in one wake-up.
+        timer = Timer.publish(every: every, tolerance: every * 0.3, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in self?.sample() }
     }

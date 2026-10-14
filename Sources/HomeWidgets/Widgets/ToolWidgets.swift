@@ -138,25 +138,28 @@ struct HabitsWidget: View {
     private func content(_ now: Date) -> some View {
         let habits = model[HabitKeys.habits]
         let log = Set(model[HabitKeys.log])
-        let dayCount = model.family == .large ? 10 : 7
+        let large = model.family == .large
+        let dayCount = large ? 10 : 7
+        let dot: CGFloat = large ? 14 : 13
+        let cell: CGFloat = large ? 17 : 15
         let calendar = Calendar.current
         let days = (0..<dayCount).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: now) }
         VStack(alignment: .leading, spacing: model.family == .large ? 10 : 7) {
             HStack {
                 Image(systemName: "flame.fill").foregroundStyle(style.tone(.orange))
-                Text("Habits").font(.system(size: 13, weight: .bold))
+                Text("Habits").font(.system(size: 13, weight: .bold)).fixedSize()
                 Spacer()
                 ForEach(days, id: \.self) { day in
                     Text(DateFormats.string(day, template: "EEEEE"))
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: large ? 10.5 : 9, weight: .semibold))
                         .foregroundStyle(calendar.isDateInToday(day) ? Color.primary : Color.secondary)
-                        .frame(width: 15)
+                        .frame(width: cell)
                 }
                 Color.clear.frame(width: 28, height: 1)
             }
             ForEach(habits.prefix(model.family == .large ? 9 : 4), id: \.self) { habit in
                 HStack(spacing: 0) {
-                    Text(habit).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    Text(habit).font(.system(size: large ? 14 : 12, weight: .medium)).lineLimit(1)
                     Spacer(minLength: 6)
                     ForEach(days, id: \.self) { day in
                         let done = log.contains("\(habit)|\(Self.dayKey(day))")
@@ -165,9 +168,9 @@ struct HabitsWidget: View {
                         } label: {
                             Circle()
                                 .fill(done ? style.tone(.orange) : Color.primary.opacity(0.1))
-                                .frame(width: 13, height: 13)
+                                .frame(width: dot, height: dot)
                                 .overlay(Circle().stroke(Color.primary.opacity(calendar.isDateInToday(day) ? 0.35 : 0), lineWidth: 1))
-                                .frame(width: 15)
+                                .frame(width: cell)
                         }
                         .buttonStyle(WidgetButtonStyle())
                     }
@@ -176,6 +179,8 @@ struct HabitsWidget: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 28, alignment: .trailing)
                 }
+                // In the large size the rows spread out to use the whole height.
+                .frame(maxHeight: large ? 44 : nil)
             }
             Spacer(minLength: 0)
         }
@@ -209,16 +214,18 @@ struct LinksWidget: View {
     }
 
     var body: some View {
-        let columns = max(1, Int((model.size.dimensions.width - 16) / 72))
-        let rows = max(1, Int((model.size.dimensions.height - 20) / 66))
-        let visible = Array(links.prefix(columns * rows))
+        let dims = model.size.dimensions
+        let area = CGSize(width: dims.width - 24, height: dims.height - 24)
+        let visible = Array(links.prefix(TileLayout.capacity(in: area, label: 18, minTile: 40)))
+        let layout = TileLayout.best(count: visible.count, in: area, label: 18, minTile: 40, maxTile: 88)
+        let columns = layout.columns, rows = layout.rows
         Grid(horizontalSpacing: 8, verticalSpacing: 8) {
             ForEach(0..<rows, id: \.self) { row in
                 GridRow {
                     ForEach(0..<columns, id: \.self) { column in
                         let index = row * columns + column
                         if index < visible.count {
-                            LinkTile(title: visible[index].title, url: visible[index].url)
+                            LinkTile(title: visible[index].title, url: visible[index].url, size: layout.tile)
                         } else {
                             Color.clear.frame(width: 1, height: 1)
                         }
@@ -234,6 +241,7 @@ struct LinksWidget: View {
 private struct LinkTile: View {
     let title: String
     let url: URL
+    var size: CGFloat = 42
 
     var body: some View {
         Button {
@@ -241,18 +249,18 @@ private struct LinkTile: View {
         } label: {
             VStack(spacing: 4) {
                 AsyncImage(url: URL(string: "https://icons.duckduckgo.com/ip3/\(url.host ?? "").ico")) { image in
-                    image.resizable().interpolation(.high).scaledToFit().padding(8)
+                    image.resizable().interpolation(.high).scaledToFit().padding(size * 0.19)
                 } placeholder: {
                     Text(String(title.prefix(1)).uppercased())
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: size * 0.43, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.white)
                 }
-                .frame(width: 42, height: 42)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.08)))
+                .frame(width: size, height: size)
+                .background(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).fill(Color.primary.opacity(0.08)))
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: min(13, 7.5 + size / 16), weight: .medium))
                     .lineLimit(1)
-                    .frame(maxWidth: 64)
+                    .frame(maxWidth: size + 24)
             }
         }
         .buttonStyle(WidgetButtonStyle())
@@ -415,7 +423,7 @@ struct StopwatchWidget: View {
             HStack(spacing: 14) {
                 VStack(spacing: 10) {
                     Text(StopwatchState.format(elapsed))
-                        .font(.system(size: model.family == .small ? 28 : 34, weight: .light, design: .rounded))
+                        .font(.system(size: model.family == .small ? 28 : (watch.laps.isEmpty ? 48 : 34), weight: .light, design: .rounded))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
@@ -436,7 +444,8 @@ struct StopwatchWidget: View {
                     }
                     .buttonStyle(WidgetButtonStyle())
                 }
-                if model.family == .medium {
+                // Laps get a column once there are some; until then the time uses the whole width.
+                if model.family == .medium && !watch.laps.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Laps").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                         ForEach(Array(watch.laps.prefix(5).enumerated()), id: \.offset) { index, lap in
@@ -572,14 +581,23 @@ struct SunArcWidget: View {
         let progress = min(1, max(0, now.timeIntervalSince(rise) / max(total, 1)))
         let isDay = now >= rise && now <= set
         let remaining = isDay ? set.timeIntervalSince(now) : (now < rise ? rise.timeIntervalSince(now) : rise.addingTimeInterval(86400).timeIntervalSince(now))
+        let status = isDay ? "\(Fmt.duration(minutes: Int(remaining / 60))) of daylight left" : "Sunrise in \(Fmt.duration(minutes: Int(remaining / 60)))"
         return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(place).font(.system(size: 12.5, weight: .semibold))
-                Spacer()
-                Text(isDay ? "\(Fmt.duration(minutes: Int(remaining / 60))) of daylight left" : "Sunrise in \(Fmt.duration(minutes: Int(remaining / 60)))")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            // A small widget stacks the status under the place so neither gets cut off.
+            if model.family == .small {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(place).font(.system(size: 12.5, weight: .semibold)).fitLine()
+                    Text(status).font(.system(size: 10.5)).foregroundStyle(.secondary).fitLine(0.8)
+                }
+            } else {
+                HStack {
+                    Text(place).font(.system(size: 12.5, weight: .semibold))
+                    Spacer()
+                    Text(status)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             Canvas { canvas, size in
                 let baseline = size.height - 6
@@ -604,9 +622,9 @@ struct SunArcWidget: View {
                 canvas.fill(Path(ellipseIn: glow.insetBy(dx: 7, dy: 7)), with: .color(isDay ? .yellow : .gray))
             }
             HStack {
-                Label(DateFormats.shortTime(rise), systemImage: "sunrise.fill")
-                Spacer()
-                Label(DateFormats.shortTime(set), systemImage: "sunset.fill")
+                Label(DateFormats.shortTime(rise), systemImage: "sunrise.fill").fitLine(0.7)
+                Spacer(minLength: 4)
+                Label(DateFormats.shortTime(set), systemImage: "sunset.fill").fitLine(0.7)
             }
             .font(.system(size: 11, weight: .medium))
             .symbolRenderingMode(.multicolor)

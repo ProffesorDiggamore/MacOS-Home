@@ -10,6 +10,89 @@ enum PhotoKeys {
     static let minutes = ConfigKey("minutes", 30)
     static let frame = ConfigKey("frame", PhotoFrame.fill)
     static let caption = ConfigKey("caption", "")
+    /// Per-photo zoom and position, as "path|zoom|x|y".
+    static let framing = ConfigKey<[String]>("framing", [])
+    /// Background removals done in settings, as "cut-out path|original path", so they can be undone.
+    static let originals = ConfigKey<[String]>("originals", [])
+}
+
+/// How one photo sits in its widget: zoom (1 = fill/fit) and an offset as a share of the widget's size.
+struct PhotoFraming: Equatable {
+    var zoom: Double = 1
+    var x: Double = 0
+    var y: Double = 0
+
+    static func get(_ model: WidgetModel, _ path: String) -> PhotoFraming {
+        for entry in model[PhotoKeys.framing] {
+            let parts = entry.components(separatedBy: "|")
+            guard parts.count == 4, parts[0] == path else { continue }
+            return PhotoFraming(zoom: Double(parts[1]) ?? 1, x: Double(parts[2]) ?? 0, y: Double(parts[3]) ?? 0)
+        }
+        return PhotoFraming()
+    }
+
+    static func set(_ framing: PhotoFraming, for path: String, in model: WidgetModel) {
+        var list = model[PhotoKeys.framing].filter { !$0.hasPrefix(path + "|") }
+        if framing != PhotoFraming() {
+            list.append("\(path)|\(framing.zoom)|\(framing.x)|\(framing.y)")
+        }
+        model.config[PhotoKeys.framing] = list
+    }
+}
+
+/// Shows a photo zoomed and moved the way it was framed in settings.
+struct FramedPhoto<Content: View>: View {
+    let framing: PhotoFraming
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { proxy in
+            content
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .scaleEffect(framing.zoom)
+                .offset(x: framing.x * proxy.size.width, y: framing.y * proxy.size.height)
+        }
+        .clipped()
+    }
+}
+
+/// Removes a photo's background (in settings) and swaps the cut-out into the widget.
+@MainActor
+enum PhotoCutout {
+    static var working = Set<String>()
+
+    static func original(of path: String, in model: WidgetModel) -> String? {
+        model[PhotoKeys.originals].lazy.map { $0.components(separatedBy: "|") }
+            .first { $0.count == 2 && $0[0] == path }?[1]
+    }
+
+    static func run(_ path: String, in model: WidgetModel) {
+        guard !working.contains(path) else { return }
+        working.insert(path)
+        model.objectWillChange.send()
+        Task { @MainActor in
+            let cut = await ImageStore.cutOutSubject(path)
+            working.remove(path)
+            model.objectWillChange.send()
+            guard let cut, let index = model[PhotoKeys.images].firstIndex(of: path) else {
+                if cut == nil { NSSound.beep() }
+                return
+            }
+            model.config[PhotoKeys.images][index] = cut
+            model.config[PhotoKeys.originals] = model[PhotoKeys.originals] + ["\(cut)|\(path)"]
+            PhotoFraming.set(PhotoFraming.get(model, path), for: cut, in: model)
+        }
+    }
+
+    static func restore(_ cut: String, in model: WidgetModel) {
+        guard let original = original(of: cut, in: model), FileManager.default.fileExists(atPath: original),
+              let index = model[PhotoKeys.images].firstIndex(of: cut) else { return }
+        model.config[PhotoKeys.images][index] = original
+        model.config[PhotoKeys.originals] = model[PhotoKeys.originals].filter { !$0.hasPrefix(cut + "|") }
+        PhotoFraming.set(PhotoFraming.get(model, cut), for: original, in: model)
+        PhotoFraming.set(PhotoFraming(), for: cut, in: model)
+        ImageStore.removeIfStored(cut)
+    }
 }
 
 enum PhotoFrame: String, ConfigOption {
@@ -85,10 +168,10 @@ struct PhotoWidget: View {
     @ViewBuilder
     private func content(path: String?, frame: PhotoFrame, count: Int) -> some View {
         let size = model.size.dimensions
-        if let path, let image = ImageStore.image(at: path, maxPixel: Int(max(size.width, size.height) * 2.2)) {
-            photo(image, frame: frame, size: size, count: count)
+        if let path, let image = ImageStore.image(at: path, maxPixel: Int(max(size.width, size.height) * 2.2 * PhotoFraming.get(model, path).zoom)) {
+            photo(image, path: path, frame: frame, size: size, count: count)
         } else if context == .gallery {
-            photo(nil, frame: frame, size: size, count: 1)
+            photo(nil, path: nil, frame: frame, size: size, count: 1)
         } else {
             WidgetMessage(symbol: "photo.on.rectangle.angled", title: "Drop photos here",
                           detail: "Or right-click › Edit Widget to choose photos or a folder.")
@@ -103,20 +186,22 @@ struct PhotoWidget: View {
     }
 
     @ViewBuilder
-    private func picture(_ image: NSImage?) -> some View {
-        if let image {
-            let floating = sources.count == 1 && sources.first.map(ImageStore.hasTransparency) == true
-            Image(nsImage: image).resizable().aspectRatio(contentMode: floating ? .fit : .fill)
+    private func picture(_ image: NSImage?, path: String?) -> some View {
+        if let image, let path {
+            let floating = sources.count == 1 && ImageStore.hasTransparency(path)
+            FramedPhoto(framing: PhotoFraming.get(model, path)) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: floating ? .fit : .fill)
+            }
         } else {
             samplePhoto
         }
     }
 
     @ViewBuilder
-    private func photo(_ image: NSImage?, frame: PhotoFrame, size: CGSize, count: Int) -> some View {
+    private func photo(_ image: NSImage?, path: String?, frame: PhotoFrame, size: CGSize, count: Int) -> some View {
         switch frame {
         case .fill:
-            picture(image)
+            picture(image, path: path)
                 .frame(width: size.width, height: size.height)
                 .clipped()
                 .contentShape(Rectangle())
@@ -124,7 +209,7 @@ struct PhotoWidget: View {
         case .polaroid:
             let caption = model[PhotoKeys.caption]
             VStack(spacing: 6) {
-                picture(image)
+                picture(image, path: path)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
                     .overlay(Rectangle().strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
@@ -141,7 +226,7 @@ struct PhotoWidget: View {
             .contentShape(Rectangle())
             .onTapGesture { if count > 1 { manualOffset += 1 } }
         case .rounded:
-            picture(image)
+            picture(image, path: path)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .padding(9)
@@ -375,11 +460,24 @@ struct TextWidget: View {
     var body: some View {
         let align = model[TextKeys.alignment]
         Text(model[TextKeys.text])
-            .font(model[TextKeys.font].font(size: CGFloat(model[TextKeys.size]) * (model.family == .large ? 1.5 : 1)))
+            .font(model[TextKeys.font].font(size: CGFloat(model[TextKeys.size]) * Self.growth(model.size)))
             .foregroundStyle(model[TextKeys.color].style(accent: accent))
             .multilineTextAlignment(align.alignment)
             .minimumScaleFactor(0.3)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: align.frameAlignment)
             .widgetPadding(16)
+    }
+
+    /// Bigger widgets get bigger text (it still shrinks to fit long messages).
+    private static func growth(_ size: WidgetSize) -> CGFloat {
+        switch size {
+        case .small: return 1
+        case .tall: return 1.15
+        case .medium: return 1.25
+        case .wide: return 1.5
+        case .large: return 1.6
+        case .portrait: return 1.9
+        case .extraLarge: return 2.2
+        }
     }
 }
