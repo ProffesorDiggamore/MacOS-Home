@@ -66,8 +66,27 @@ enum BackgroundKeys {
 
 /// A widget's own colour choice ("" = same as other widgets).
 enum ColorKeys {
+    /// "", "theme", "custom", "single" or "original" (see WidgetColorChoice).
     static let mode = ConfigKey("colorMode", "")
     static let single = ConfigKey("singleColor", "")
+    /// This widget's own five theme colours when mode is "custom".
+    static let theme = ConfigKey<[String]>("themeColors", [])
+}
+
+/// What a single widget can choose in Edit Widget or its right-click menu.
+enum WidgetColorChoice: String, CaseIterable, Identifiable {
+    case same = "", theme, custom, single, original
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .same: return "Same as Other Widgets"
+        case .theme: return "Theme"
+        case .custom: return "Its Own Theme"
+        case .single: return "One Color"
+        case .original: return "Original (many colors)"
+        }
+    }
 }
 
 /// On-disk representation of a widget.

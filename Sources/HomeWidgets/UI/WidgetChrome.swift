@@ -16,8 +16,9 @@ enum WidgetContext {
 /// so every graph, ring and icon follows the setting without per-widget code.
 struct WidgetLook: Equatable {
     var style: WidgetStyle
-    var mode: WidgetColorMode = .trio
+    var mode: WidgetColorMode = .theme
     var single: Color = .green
+    var theme: [Color] = ThemePreset.standard.map { Color(hexString: $0) ?? .gray }
 
     static func == (lhs: WidgetLook, rhs: WidgetStyle) -> Bool { lhs.style == rhs }
     static func != (lhs: WidgetLook, rhs: WidgetStyle) -> Bool { lhs.style != rhs }
@@ -26,37 +27,24 @@ struct WidgetLook: Equatable {
         if style == .tinted { return .white }
         switch mode {
         case .original: return color
-        case .single: return Self.isNeutral(color) ? color : single
-        case .trio: return Self.trio(color)
+        case .single: return Self.slot(of: color) == nil ? color : single
+        case .theme:
+            guard let slot = Self.slot(of: color), slot.rawValue < theme.count else { return color }
+            return theme[slot.rawValue]
         }
     }
 
-    static let trioGreen = Color(hex: 0x34C759)
-    static let trioYellow = Color(hex: 0xFFCC00)
-    static let trioBlue = Color(hex: 0x0A84FF)
+    private static var slots: [Color: ThemeSlot?] = [:]
 
-    private static var cache: [Color: Color] = [:]
-
-    /// Warm colours become yellow, greens become green, everything cool becomes blue.
-    static func trio(_ color: Color) -> Color {
-        if let hit = cache[color] { return hit }
-        var result = color
+    /// Which theme family a colour belongs to; nil for greys and white (text, tracks).
+    static func slot(of color: Color) -> ThemeSlot? {
+        if let known = slots[color] { return known }
+        var result: ThemeSlot?
         if let rgb = NSColor(color).usingColorSpace(.sRGB), rgb.saturationComponent > 0.18 {
-            let hue = rgb.hueComponent * 360
-            switch hue {
-            case 75..<175: result = trioGreen
-            case 175..<345: result = trioBlue
-            default: result = trioYellow   // reds, oranges, yellows, browns
-            }
+            result = ThemeSlot.slot(hue: Double(rgb.hueComponent) * 360)
         }
-        cache[color] = result
+        slots[color] = result
         return result
-    }
-
-    /// Greys and white stay as they are (text, tracks, separators).
-    static func isNeutral(_ color: Color) -> Bool {
-        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return false }
-        return rgb.saturationComponent < 0.18
     }
 }
 
@@ -153,12 +141,24 @@ struct WidgetChrome<Content: View>: View {
 
     private var backgroundImagePath: String { model[BackgroundKeys.image] }
 
-    /// This widget's colour choice, falling back to the global one.
+    /// This widget's colour choice, falling back to the one for all widgets.
     private var look: WidgetLook {
-        let own = WidgetColorMode(rawValue: model[ColorKeys.mode])
-        let mode = own ?? appearance.colorMode
-        let hex = own == nil ? appearance.singleColor : (model[ColorKeys.single].isEmpty ? appearance.singleColor : model[ColorKeys.single])
-        return WidgetLook(style: style, mode: mode, single: Color(hexString: hex) ?? .green)
+        let colors: (String) -> Color = { Color(hexString: $0) ?? .gray }
+        var look = WidgetLook(style: style, mode: appearance.colorMode,
+                              single: colors(appearance.singleColor), theme: appearance.themeColors.map(colors))
+        switch WidgetColorChoice(rawValue: model[ColorKeys.mode]) ?? .same {
+        case .same: break
+        case .theme: look.mode = .theme
+        case .custom:
+            look.mode = .theme
+            let own = model[ColorKeys.theme]
+            if own.count == ThemeSlot.allCases.count { look.theme = own.map(colors) }
+        case .single:
+            look.mode = .single
+            if !model[ColorKeys.single].isEmpty { look.single = colors(model[ColorKeys.single]) }
+        case .original: look.mode = .original
+        }
+        return look
     }
 
     private var scheme: ColorScheme {
@@ -280,8 +280,7 @@ struct WidgetContextMenu: View {
             }
         }
         Picker("Colors", selection: model.binding(ColorKeys.mode)) {
-            Text("Same as Other Widgets").tag("")
-            ForEach(WidgetColorMode.allCases) { Text($0.label).tag($0.rawValue) }
+            ForEach(WidgetColorChoice.allCases) { Text($0.label).tag($0.rawValue) }
         }
         Divider()
         Button("Remove Widget") {

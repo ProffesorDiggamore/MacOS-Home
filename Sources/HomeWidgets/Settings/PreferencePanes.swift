@@ -44,13 +44,25 @@ struct AppearanceView: View {
                 Toggle("Drop shadow", isOn: $appearance.showShadow)
             }
 
-            Section("Color & Type") {
-                Picker("Widget colors", selection: $appearance.colorMode) {
+            Section {
+                Picker("Colors", selection: $appearance.colorMode) {
                     ForEach(WidgetColorMode.allCases) { Text($0.label).tag($0) }
                 }
-                if appearance.colorMode == .single {
-                    ColorChoiceRow(hex: $appearance.singleColor)
+                switch appearance.colorMode {
+                case .theme: ThemeEditor(colors: $appearance.themeColors)
+                case .single: ColorChoiceRow(hex: $appearance.singleColor)
+                case .original: EmptyView()
                 }
+                ThemePreview(look: WidgetLook(style: .glass, mode: appearance.colorMode,
+                                              single: Color(hexString: appearance.singleColor) ?? .green,
+                                              theme: appearance.themeColors.map { Color(hexString: $0) ?? .gray }))
+            } header: {
+                Text("Widget Colors")
+            } footer: {
+                Text("Changes every widget at once. To give one widget different colors, right-click it › Colors, or open Edit Widget.")
+            }
+
+            Section("Color & Type") {
                 LabeledContent("Accent color") {
                     HStack(spacing: 8) {
                         ForEach(AccentOption.allCases) { option in
@@ -231,6 +243,93 @@ struct ColorChoiceRow: View {
                 ColorPicker("", selection: Binding(get: { Color(hexString: hex) ?? .green }, set: { hex = $0.hexString }), supportsOpacity: false)
                     .labelsHidden()
             }
+        }
+    }
+}
+
+
+/// Presets plus one colour picker per family. Editing a slot recolours that
+/// family in every widget that uses this theme.
+struct ThemeEditor: View {
+    @Binding var colors: [String]
+
+    private func binding(_ slot: ThemeSlot) -> Binding<Color> {
+        Binding(get: { Color(hexString: colors.indices.contains(slot.rawValue) ? colors[slot.rawValue] : "888888") ?? .gray },
+                set: { color in
+                    var next = colors.count == ThemeSlot.allCases.count ? colors : ThemePreset.standard
+                    next[slot.rawValue] = color.hexString
+                    colors = next
+                })
+    }
+
+    var body: some View {
+        LabeledContent("Presets") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ThemePreset.all) { preset in
+                        Button { colors = preset.colors } label: {
+                            VStack(spacing: 4) {
+                                HStack(spacing: 2) {
+                                    ForEach(preset.colors.indices, id: \.self) { i in
+                                        Circle().fill(Color(hexString: preset.colors[i]) ?? .gray).frame(width: 11, height: 11)
+                                    }
+                                }
+                                Text(preset.name).font(.caption2).lineLimit(1)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(colors == preset.colors ? 0.14 : 0.05)))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(colors == preset.colors ? Color.accentColor : .clear, lineWidth: 1.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxWidth: 420)
+        }
+        ForEach(ThemeSlot.allCases) { slot in
+            LabeledContent {
+                HStack(spacing: 10) {
+                    Text(slot.usedBy).font(.caption).foregroundStyle(.secondary)
+                    ColorPicker("", selection: binding(slot), supportsOpacity: false).labelsHidden()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(slot.original).frame(width: 8, height: 8).help("Originally \(slot.label.lowercased())")
+                    Text(slot.label)
+                }
+            }
+        }
+    }
+}
+
+/// What the colours look like on real widget parts: CPU/GPU-style rings and a graph.
+struct ThemePreview: View {
+    let look: WidgetLook
+    private static let samples: [(String, Color, Double)] = [
+        ("CPU", .blue, 0.42), ("GPU", .purple, 0.68), ("Memory", .green, 0.55), ("Storage", .orange, 0.8), ("Alerts", .red, 0.3),
+    ]
+
+    var body: some View {
+        LabeledContent("Preview") {
+            HStack(spacing: 14) {
+                ForEach(Self.samples, id: \.0) { name, color, value in
+                    VStack(spacing: 4) {
+                        ZStack {
+                            Circle().stroke(look.tone(color).opacity(0.22), lineWidth: 5)
+                            Circle().trim(from: 0, to: value)
+                                .stroke(look.tone(color), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                            Text("\(Int(value * 100))").font(.system(size: 10, weight: .semibold, design: .rounded))
+                        }
+                        .frame(width: 38, height: 38)
+                        Text(name).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.75)))
+            .environment(\.colorScheme, .dark)
         }
     }
 }

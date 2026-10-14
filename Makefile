@@ -21,6 +21,8 @@ install: app
 	-pkill -x HomeWidgets && sleep 1
 	rm -rf "/Applications/$(APP_NAME).app"
 	cp -R "$(APP)" /Applications/
+	# Only keep the installed copy, so Spotlight shows one Home Widgets.
+	rm -rf "$(APP)"
 	open "/Applications/$(APP_NAME).app"
 
 # Download the latest code and reinstall.

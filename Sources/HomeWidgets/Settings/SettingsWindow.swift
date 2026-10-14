@@ -318,12 +318,18 @@ struct WidgetEditor: View {
                     ForEach(WidgetStyle.available) { Text($0.label).tag(WidgetStyle?.some($0)) }
                 }
                 Picker("Colors", selection: model.binding(ColorKeys.mode)) {
-                    Text("Same as Other Widgets").tag("")
-                    ForEach(WidgetColorMode.allCases) { Text($0.label).tag($0.rawValue) }
+                    ForEach(WidgetColorChoice.allCases) { Text($0.label).tag($0.rawValue) }
                 }
-                if model[ColorKeys.mode] == WidgetColorMode.single.rawValue {
+                switch WidgetColorChoice(rawValue: model[ColorKeys.mode]) ?? .same {
+                case .single:
                     ColorChoiceRow(hex: Binding(get: { model[ColorKeys.single].isEmpty ? AppearanceSettings.shared.singleColor : model[ColorKeys.single] },
                                                 set: { model.config[ColorKeys.single] = $0 }))
+                case .custom:
+                    ThemeEditor(colors: Binding(
+                        get: { model[ColorKeys.theme].count == ThemeSlot.allCases.count ? model[ColorKeys.theme] : AppearanceSettings.shared.themeColors },
+                        set: { model.config[ColorKeys.theme] = $0 }))
+                default:
+                    EmptyView()
                 }
             }
 

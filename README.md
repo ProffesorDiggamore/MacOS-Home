@@ -61,7 +61,7 @@ Your widgets and settings are kept either way. They live in `~/Library/Applicati
 **New in version 3** in bold.
 
 ### Wallpapers
-**Settings › Wallpapers** draws abstract wallpapers from maths, in the spirit of Apple's: Soft Blobs, Ribbons, Layered Waves, Aurora, Rings, Facets, Dunes and Orbitals, in ten colour sets. Shuffle until you like one and click **Set as Wallpaper**; each display gets its own copy at full resolution, saved in *Pictures › Home Widgets Wallpapers*. The art widgets use the same engine.
+**Settings › Wallpapers** computes every pixel from complex maths: **Julia Set**, **Mandelbrot** deep zooms, **Newton Fractal** basins, **Complex Function** domain colouring, **Strange Attractor** (Clifford) density plots, **Quasicrystal** wave interference and **Lyapunov** chaos maps, in ten colour sets. Click the preview (or ⌘R) to shuffle, then **Set as Wallpaper**. Size is *Best* (4K or the display's own pixels, whichever is sharper), 4K, 5K, 6K or 8K; each display gets its own copy, saved in *Pictures › Home Widgets Wallpapers*. **Save PNG…** exports one. A 4K render takes well under a second.
 
 ### Sizes
 
@@ -104,6 +104,7 @@ Tokens are stored in your Mac's Keychain. Because the app is signed locally, mac
 - **See-through widgets** (Clear style, stickers, very low opacity) show a soft glowing outline when the pointer is over them, and while any widget is being dragged, so you can always find and grab them.
 - **Right-click** a widget to resize it, restyle it, edit it, or remove it.
 - **Appearance**: Frosted Glass, Liquid Glass (macOS 26), Solid, Tinted or Clear; light/dark; accent color; font; opacity.
+- **Widget Colors** (Appearance): every colour a widget uses — the CPU ring, GPU ring, graphs, icons — belongs to one of five families (reds, oranges, greens, blues, purples). **Theme** lets you pick a colour for each family, or a preset (Green · Yellow · Blue is the default; Apple, Ocean, Sunset, Neon and more), and every widget changes at once. **One Color** paints everything in a single colour; **Original** keeps each widget's own colours. To give one widget different colours, right-click it › **Colors** (or **Edit Widget**) and choose *Its Own Theme* or *One Color*.
 - **General**: widgets on the desktop or floating above windows, lock positions, open at login, Dock/menu bar icons, refresh rate, °F/°C.
 
 ## Permissions
