@@ -61,7 +61,7 @@ Your widgets and settings are kept either way. They live in `~/Library/Applicati
 **New in version 3** in bold.
 
 ### Wallpapers
-**Settings › Wallpapers** computes every pixel from complex maths: **Julia Set**, **Mandelbrot** deep zooms, **Newton Fractal** basins, **Complex Function** domain colouring, **Strange Attractor** (Clifford) density plots, **Quasicrystal** wave interference and **Lyapunov** chaos maps, in ten colour sets. Click the preview (or ⌘R) to shuffle, then **Set as Wallpaper**. Size is *Best* (4K or the display's own pixels, whichever is sharper), 4K, 5K, 6K or 8K; each display gets its own copy, saved in *Pictures › Home Widgets Wallpapers*. **Save PNG…** exports one. A 4K render takes well under a second.
+**Settings › Wallpapers** ray traces studio renders on your Mac's graphics chip — real reflections, refraction and dispersion under soft studio lights: **Liquid Chrome**, **Chrome Veins**, **Satin**, **Soft Layers**, **Glass Ribbon**, **Liquid Metal**, **Glass Sculpture** and **Glass Pills**, in five neutral tones (Silver, Obsidian, Pearl, Midnight, Prism). Click the preview (or ⌘R) to shuffle, then **Set as Wallpaper**. Size is *Best* (4K or the display's own pixels, whichever is sharper), 4K, 5K, 6K or 8K; each display gets its own copy, saved in *Pictures › Home Widgets Wallpapers*. **Save PNG…** exports one. A 4K render takes about a second on Apple silicon.
 
 ### Sizes
 

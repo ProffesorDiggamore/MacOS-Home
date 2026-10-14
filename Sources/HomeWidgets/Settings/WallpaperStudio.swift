@@ -1,11 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// Desktop wallpapers computed from complex maths — fractals, complex functions,
-/// strange attractors, wave interference — rendered at 4K or better and set with one click.
+/// Desktop wallpapers ray traced on the GPU — liquid chrome, glass, satin and soft clay under
+/// studio lights — rendered at 4K or better and set with one click.
 struct WallpaperStudioView: View {
-    @AppStorage("mathPattern") private var patternRaw = MathPattern.julia.rawValue
-    @AppStorage("wallpaperPalette") private var paletteID = "sonoma"
+    @AppStorage("studioScene") private var sceneRaw = StudioScene.glassRibbon.rawValue
+    @AppStorage("studioTone") private var toneRaw = StudioTone.obsidian.rawValue
     @AppStorage("wallpaperSeed") private var seed = 2026
     @AppStorage("wallpaperResolution") private var resolutionRaw = OutputSize.best.rawValue
     @State private var preview: NSImage?
@@ -13,8 +13,8 @@ struct WallpaperStudioView: View {
     @State private var progress: Double?
     @State private var status: String?
 
-    private var pattern: MathPattern { MathPattern(rawValue: patternRaw) ?? .julia }
-    private var palette: ArtPalette { ArtPalette.named(paletteID) }
+    private var scene: StudioScene { StudioScene(rawValue: sceneRaw) ?? .glassRibbon }
+    private var tone: StudioTone { StudioTone(rawValue: toneRaw) ?? .obsidian }
     private var resolution: OutputSize { OutputSize(rawValue: resolutionRaw) ?? .best }
 
     private var aspect: CGFloat {
@@ -56,7 +56,7 @@ struct WallpaperStudioView: View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Wallpapers").font(.largeTitle.bold())
-                    Text("Every pixel is computed from complex maths — fractals, complex functions, chaos. Pick a pattern and colours, shuffle until it's perfect, then set it in 4K or sharper.")
+                    Text("Ray-traced studio renders: liquid chrome, real glass and satin under soft lights. Pick a style and tone, shuffle until it's perfect, then set it in 4K or sharper.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -95,16 +95,16 @@ struct WallpaperStudioView: View {
                         .disabled(progress != nil)
                 }
 
-                Text("Pattern").font(.headline)
+                Text("Style").font(.headline)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 12) {
-                    ForEach(MathPattern.allCases) { item in
-                        Button { patternRaw = item.rawValue } label: {
+                    ForEach(StudioScene.allCases) { item in
+                        Button { sceneRaw = item.rawValue } label: {
                             VStack(alignment: .leading, spacing: 5) {
-                                PatternThumbnail(pattern: item, palette: palette, seed: seed, aspect: aspect)
+                                SceneThumbnail(scene: item, tone: tone, seed: seed, aspect: aspect)
                                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(item == pattern ? Color.accentColor : Color.clear, lineWidth: 2.5))
-                                Text(item.label).font(.caption.weight(item == pattern ? .semibold : .regular))
+                                        .strokeBorder(item == scene ? Color.accentColor : Color.clear, lineWidth: 2.5))
+                                Text(item.label).font(.caption.weight(item == scene ? .semibold : .regular))
                                 Text(item.summary).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                                     .frame(height: 26, alignment: .topLeading)
                             }
@@ -113,32 +113,30 @@ struct WallpaperStudioView: View {
                     }
                 }
 
-                Text("Colours").font(.headline)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], spacing: 10) {
-                    ForEach(ArtPalette.all) { item in
-                        Button { paletteID = item.id } label: {
+                Text("Tone").font(.headline)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)], spacing: 10) {
+                    ForEach(StudioTone.allCases) { item in
+                        Button { toneRaw = item.rawValue } label: {
                             VStack(spacing: 5) {
-                                HStack(spacing: 0) {
-                                    ForEach(item.colors.indices, id: \.self) { Color(hex: item.colors[$0]) }
-                                }
+                                LinearGradient(colors: [Color(hex: item.swatch.0), Color(hex: item.swatch.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 .frame(height: 26)
                                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .strokeBorder(item.id == paletteID ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: item.id == paletteID ? 2.5 : 1))
-                                Text(item.name).font(.caption)
+                                    .strokeBorder(item == tone ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: item == tone ? 2.5 : 1))
+                                Text(item.label).font(.caption)
                             }
                         }
                         .buttonStyle(.plain)
                     }
                 }
 
-                Text("Saved in Pictures › Home Widgets Wallpapers. A 4K render takes a few seconds; 8K and Strange Attractors take longer.")
+                Text("Rendered on your Mac's graphics chip with reflections, refraction and soft studio lighting. Saved in Pictures › Home Widgets Wallpapers.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(24)
         }
-        .task(id: "\(patternRaw)|\(paletteID)|\(seed)") { await renderPreview() }
+        .task(id: "\(sceneRaw)|\(toneRaw)|\(seed)") { await renderPreview() }
     }
 
     private func shuffle() {
@@ -148,10 +146,10 @@ struct WallpaperStudioView: View {
 
     private func renderPreview() async {
         previewing = true
-        let (p, pal, s, a) = (pattern, palette, seed, aspect)
+        let (sc, t, s, a) = (scene, tone, seed, aspect)
         let image = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-            let width = 1200
-            return MathArt.render(p, palette: pal, seed: s, width: width, height: Int(CGFloat(width) / a))
+            let width = 1600
+            return StudioRenderer.render(sc, tone: t, seed: s, width: width, height: Int(CGFloat(width) / a), quality: .preview)
         }.value
         guard !Task.isCancelled else { return }
         if let image { preview = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height)) }
@@ -168,9 +166,9 @@ struct WallpaperStudioView: View {
 
     /// Renders off the main thread and writes a PNG.
     private func renderFile(width: Int, height: Int, to url: URL, share: Double, base: Double) async -> Bool {
-        let (p, pal, s) = (pattern, palette, seed)
+        let (sc, t, s) = (scene, tone, seed)
         return await Task.detached(priority: .userInitiated) { () -> Bool in
-            let image = MathArt.render(p, palette: pal, seed: s, width: width, height: height) { value in
+            let image = StudioRenderer.render(sc, tone: t, seed: s, width: width, height: height) { value in
                 DispatchQueue.main.async { if self.progress != nil { self.progress = base + value * share } }
             }
             guard let image, let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return false }
@@ -179,7 +177,7 @@ struct WallpaperStudioView: View {
     }
 
     private func fileName(_ width: Int, _ height: Int, suffix: String = "") -> String {
-        "\(pattern.label) \(palette.name) \(seed) \(width)x\(height)\(suffix).png"
+        "\(scene.label) \(tone.label) \(seed) \(width)x\(height)\(suffix).png"
     }
 
     private func setWallpaper() {
@@ -216,10 +214,10 @@ struct WallpaperStudioView: View {
     }
 }
 
-/// A small render of each pattern with the current colours and seed (cached).
-private struct PatternThumbnail: View {
-    let pattern: MathPattern
-    let palette: ArtPalette
+/// A small render of each style in the current tone and seed (cached).
+private struct SceneThumbnail: View {
+    let scene: StudioScene
+    let tone: StudioTone
     let seed: Int
     let aspect: CGFloat
     @State private var image: NSImage?
@@ -236,12 +234,12 @@ private struct PatternThumbnail: View {
             }
         }
         .aspectRatio(aspect, contentMode: .fit)
-        .task(id: "\(pattern.rawValue)|\(palette.id)|\(seed)") {
-            let key = "\(pattern.rawValue)|\(palette.id)|\(seed)" as NSString
+        .task(id: "\(scene.rawValue)|\(tone.rawValue)|\(seed)") {
+            let key = "\(scene.rawValue)|\(tone.rawValue)|\(seed)" as NSString
             if let cached = Self.cache.object(forKey: key) { image = cached; return }
-            let (p, pal, s, a) = (pattern, palette, seed, aspect)
+            let (sc, t, s, a) = (scene, tone, seed, aspect)
             let rendered = await Task.detached(priority: .utility) { () -> CGImage? in
-                MathArt.render(p, palette: pal, seed: s, width: 320, height: Int(320 / a))
+                StudioRenderer.render(sc, tone: t, seed: s, width: 400, height: Int(400 / a), quality: .thumbnail)
             }.value
             guard let rendered else { return }
             let ns = NSImage(cgImage: rendered, size: NSSize(width: rendered.width, height: rendered.height))
