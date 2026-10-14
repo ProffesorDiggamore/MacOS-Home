@@ -173,10 +173,10 @@ float3 shadeHeight(float2 p, thread const Scene& S) {
     if (scene == 2) {
         float c = clamp(n.z, 0.0, 1.0);
         float fr = 0.04 + 0.96 * pow(1.0 - c, 5.0);
-        float3 diffuse = S.P->skyMid.rgb * 0.6;
+        float3 diffuse = S.P->skyMid.rgb * 0.25 * (0.4 + 0.6 * c);
         for (int i = 0; i < 4; i++) {
             float area = S.L[i].size.x * S.L[i].size.y;
-            diffuse += S.L[i].color.rgb * area * 0.5 * max(dot(n, S.L[i].dir.xyz), 0.0);
+            diffuse += max(S.L[i].color.rgb, 0.0) * area * 1.4 * pow(max(dot(n, S.L[i].dir.xyz), 0.0), 2.0);
         }
         float3 sheen = env(reflect(rd, n), 0.2 + S.P->base.w, S);
         return S.P->base.rgb * diffuse + sheen * (fr * 0.8 + 0.1) * film(c, S);
