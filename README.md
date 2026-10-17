@@ -6,6 +6,16 @@ Home Widgets is a small native app (Swift + SwiftUI, no Electron) that lives in 
 
 <p align="center"><img src="Resources/AppIcon.png" width="128" alt="Home Widgets icon"></p>
 
+## Download
+
+**[⬇ Download Home Widgets for Mac](https://github.com/ProffesorDiggamore/MacOS-Home/releases/latest/download/Home-Widgets.zip)** · macOS 14 Sonoma or later · Apple Silicon and Intel
+
+1. Unzip it and drag **Home Widgets** into **Applications**.
+2. Open it. The first time, macOS says it can't verify the developer — click **Done**.
+3. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. You only do this once.
+
+The app isn't notarized by Apple, which is why macOS asks. All versions are on the [Releases page](https://github.com/ProffesorDiggamore/MacOS-Home/releases).
+
 ## Widgets (27)
 
 | Time & Date | System | Productivity | Media & Inspiration |
