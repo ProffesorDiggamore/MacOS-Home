@@ -127,9 +127,12 @@ final class WidgetPanelController {
     private var hideWork: DispatchWorkItem?
     private var lastGhost: CGRect?
     private var lastCell: CGRect?
+    /// The size the panel is laid out for, to go back to if a new size doesn't fit.
+    private var shownSize: WidgetSize
 
     init(model: WidgetModel) {
         self.model = model
+        shownSize = model.size
         panel = WidgetPanel(contentRect: model.frame,
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered,
@@ -258,12 +261,23 @@ final class WidgetPanelController {
         }
     }
 
-    /// A new size keeps the same top-left corner when there's room, otherwise the nearest free slot.
+    /// A new size keeps the same top-left corner when there's room, otherwise the nearest
+    /// free slot. With no room anywhere, the widget goes back to the size it was.
     private func sizeChanged() {
         let dimensions = model.size.dimensions
         let rect = CGRect(x: model.topLeft.x, y: model.topLeft.y - dimensions.height,
                           width: dimensions.width, height: dimensions.height)
-        let placed = DesktopGrid.place(rect, size: model.size, occupied: AppController.shared.widgetFrames(excluding: model.id))
+        guard let placed = DesktopGrid.place(rect, size: model.size, occupied: AppController.shared.widgetFrames(excluding: model.id)) else {
+            let wanted = model.size
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.model.size = self.shownSize
+                AppController.showNoRoom("There's no room to make this widget \(wanted.label).",
+                                         detail: "Move or remove a widget to free up space, then try again.")
+            }
+            return
+        }
+        shownSize = model.size
         panel.setFrame(placed, display: true)
         model.topLeft = CGPoint(x: placed.minX, y: placed.maxY)
         refreshShadow()
@@ -327,7 +341,8 @@ final class WidgetPanelController {
         let rect = model.frame
         let onScreen = NSScreen.screens.contains { DesktopGrid.area(of: $0).intersects(rect.insetBy(dx: 30, dy: 30)) }
         if !onScreen {
-            move(to: DesktopGrid.place(rect, size: model.size, occupied: occupied), animated: false)
+            let fallback = DesktopGrid(bounds: DesktopGrid.area(of: NSScreen.main)).rect(at: .init(column: 0, row: 0), size: model.size)
+            move(to: DesktopGrid.place(rect, size: model.size, occupied: occupied) ?? fallback, animated: false)
         }
     }
 }

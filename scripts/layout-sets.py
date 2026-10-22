@@ -47,14 +47,13 @@ SETS = {
         ("binaryClock", "small", 4, 2, {}),
     ],
     6: [
-        ("flipClock", "medium", 0, 0, {}), ("wordClock", "small", 2, 0, {}), ("lavaLamp", "small", 3, 0, {}),
-        ("digitalRain", "small", 4, 0, {}),
-        ("aquarium", "medium", 0, 1, {}), ("nightSky", "medium", 2, 1, {}), ("lifeGame", "small", 4, 1, {}),
-        ("bounce", "medium", 0, 2, {}), ("moodGradient", "small", 2, 2, {}), ("plant", "small", 3, 2, {}),
-        ("dice", "small", 4, 2, {}),
+        ("flipClock", "medium", 0, 0, {}), ("wordClock", "small", 2, 0, {}), ("dotClock", "medium", 3, 0, {}),
+        ("devServers", "medium", 0, 1, {}), ("gitStatus", "medium", 2, 1, {}), ("lifeGame", "small", 4, 1, {}),
+        ("onThisDay", "medium", 0, 2, {}), ("deviceBatteries", "small", 2, 2, {}), ("devTools", "small", 3, 2, {}),
+        ("breathe", "small", 4, 2, {}),
     ],
     7: [
-        ("crabPet", "medium", 0, 0, {}), ("palette", "medium", 2, 0, {}), ("sticker", "small", 4, 0, {}),
+        ("crabPet", "medium", 0, 0, {}), ("quote", "medium", 2, 0, {}), ("sticker", "small", 4, 0, {}),
         ("claude", "medium", 0, 1, {"display": {"string": {"_0": "mascot"}}}), ("text", "medium", 2, 1, {}),
         ("volume", "small", 4, 1, {}),
         ("diskActivity", "small", 0, 2, {}), ("wifi", "small", 1, 2, {}), ("clipboard", "medium", 2, 2, {}),
@@ -62,7 +61,7 @@ SETS = {
     ],
     8: [
         ("appShortcuts", "wide", 0, 0, {}), ("text", "tall", 4, 0, {"text": {"string": {"_0": "Be strong and of a good courage 💪"}}}),
-        ("nightSky", "extraLarge", 0, 1, {}), ("clock", "small", 4, 2, {}),
+        ("dotClock", "wide", 0, 1, {}), ("onThisDay", "wide", 0, 2, {}), ("clock", "small", 4, 2, {}),
     ],
 }
 

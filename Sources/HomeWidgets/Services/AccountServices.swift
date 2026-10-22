@@ -134,13 +134,15 @@ final class GitHubService: ObservableObject {
     // MARK: Requests
 
     /// Calls the GitHub REST API and hands back JSON on the main thread.
-    func get(_ path: String, token tokenOverride: String? = nil, completion: @escaping (Any?, Int) -> Void) {
+    /// `fresh` skips the URL cache: GitHub marks most responses cacheable for 60 seconds.
+    func get(_ path: String, token tokenOverride: String? = nil, fresh: Bool = false, completion: @escaping (Any?, Int) -> Void) {
         loadToken()
         guard let token = tokenOverride ?? token,
               let url = URL(string: path.hasPrefix("http") ? path : "https://api.github.com" + path) else {
             return completion(nil, 0)
         }
         var request = URLRequest(url: url)
+        if fresh { request.cachePolicy = .reloadIgnoringLocalCacheData }
         Self.authorize(&request, token: token)
         URLSession.shared.dataTask(with: request) { data, response, _ in
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -279,12 +281,14 @@ final class GitHubService: ObservableObject {
     static let tokenURL = URL(string: "https://github.com/settings/tokens/new?scopes=repo,notifications,read:user&description=Home%20Widgets")!
 }
 
-// MARK: - Cairn notes
+// MARK: - Slate notes
 
-/// Reads and writes notes in a Cairn vault: Markdown files in a GitHub repo (everything outside `app/`
+/// Reads and writes notes in a Slate (formerly Cairn) vault: Markdown files in a GitHub repo (everything outside `app/`
 /// and dot-folders), with daily notes at `Daily/YYYY-MM-DD.md` and emoji icons in `icon:` frontmatter.
-final class CairnService: ObservableObject {
-    static let shared = CairnService()
+final class SlateService: ObservableObject {
+    static let shared = SlateService()
+    /// Every Slate widget checks back this often (the service skips repeats within five minutes).
+    static let refreshTimer = Timer.publish(every: 300, tolerance: 30, on: .main, in: .common).autoconnect()
 
     struct Note: Identifiable, Equatable {
         var id: String { path }
@@ -302,10 +306,14 @@ final class CairnService: ObservableObject {
         var noteCount: Int?
         var pinnedText: String?
         var todayText: String?
+        /// The note `todayText` came from, so yesterday's isn't shown (or edited) as today's after midnight.
+        var todayFile: String?
         var error: String?
         var updated: Date?
         /// Anyone on the internet can read this repo.
         var isPublic = false
+        /// Days that have a daily note, as `yyyy-MM-dd`.
+        var dailyDates: Set<String> = []
     }
 
     @Published private(set) var vaults: [String: Vault] = [:]
@@ -314,6 +322,8 @@ final class CairnService: ObservableObject {
 
     private let github = GitHubService.shared
     private var lastRefresh: [String: Date] = [:]
+    /// Edits waiting for the one in flight on the same repo; overlapping writes would carry the same sha.
+    private var queuedEdits: [String: [() -> Void]] = [:]
     private var icons: [String: String] = [:]
     private let iso = ISO8601DateFormatter()
     private var cachedToken: String?
@@ -321,7 +331,7 @@ final class CairnService: ObservableObject {
 
     // MARK: Token
 
-    /// Cairn can use its own token (Contents read/write on the vault repo) or fall back to the GitHub one.
+    /// Slate can use its own token (Contents read/write on the vault repo) or fall back to the GitHub one.
     var token: String? {
         loadToken()
         if let cachedToken { return cachedToken }
@@ -358,7 +368,7 @@ final class CairnService: ObservableObject {
         return value.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
-    /// Same rules as Cairn's `isVaultNotePath`.
+    /// Same rules as Slate's `isVaultNotePath`.
     static func isNote(_ path: String) -> Bool {
         guard path.lowercased().hasSuffix(".md") else { return false }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
@@ -367,10 +377,24 @@ final class CairnService: ObservableObject {
     }
 
     static func dailyPath(folder: String, date: Date = Date()) -> String {
-        let name = DateFormats.string(date, format: "yyyy-MM-dd") + ".md"
+        let name = dayKey(date) + ".md"
         let clean = folder.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         return clean.isEmpty ? name : clean + "/" + name
     }
+
+    /// Daily notes are named in Gregorian `yyyy-MM-dd` with Western digits, whatever calendar the Mac uses.
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    static func dayKey(_ date: Date = Date()) -> String { dayFormatter.string(from: date) }
+
+    static func isDayKey(_ text: String) -> Bool { text.count == 10 && dayFormatter.date(from: text) != nil }
 
     private static func encodePath(_ path: String) -> String {
         path.split(separator: "/").map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }.joined(separator: "/")
@@ -407,29 +431,32 @@ final class CairnService: ObservableObject {
         let repo = Self.normalize(rawRepo)
         guard repo.contains("/") else { return }
         guard let token else {
-            vaults[repo, default: Vault()].error = "Connect GitHub or add your Cairn token in Accounts."
+            vaults[repo, default: Vault()].error = "Connect GitHub or add your Slate token in Accounts."
             return
         }
         let key = "\(repo)|\(folder)|\(pinned)|\(dailyFolder)"
         if !force, let last = lastRefresh[key], Date().timeIntervalSince(last) < 300 { return }
         lastRefresh[key] = Date()
-        loadNotes(repo: repo, folder: folder, token: token)
+        loadNotes(repo: repo, folder: folder, dailyFolder: dailyFolder, token: token)
         loadVisibility(repo: repo, token: token)
         if !pinned.isEmpty {
             loadText(repo: repo, path: Self.inVault(pinned, folder: folder), token: token) { [weak self] text in
                 self?.vaults[repo, default: Vault()].pinnedText = text.map(Self.body) ?? "Pinned note not found: \(pinned)"
             }
         }
-        loadText(repo: repo, path: Self.inVault(Self.dailyPath(folder: dailyFolder), folder: folder), token: token) { [weak self] text in
+        let todayFile = Self.inVault(Self.dailyPath(folder: dailyFolder), folder: folder)
+        loadText(repo: repo, path: todayFile, token: token) { [weak self] text in
             self?.vaults[repo, default: Vault()].todayText = text.map(Self.body)
+            self?.vaults[repo, default: Vault()].todayFile = todayFile
         }
     }
 
     /// The notes that exist *right now* (the branch's current file tree), ordered by when commits last
     /// touched them. Version 2 listed files straight from commit history, so notes deleted or moved
-    /// in Cairn kept showing up in the widget.
-    private func loadNotes(repo: String, folder: String, token: String) {
+    /// in Slate kept showing up in the widget.
+    private func loadNotes(repo: String, folder: String, dailyFolder: String, token: String) {
         let prefix = Self.folderPrefix(folder)
+        let dailyPrefix = Self.inVault(Self.folderPrefix(dailyFolder), folder: folder)
         github.get("/repos/\(repo)/git/trees/HEAD?recursive=1", token: token) { [weak self] json, status in
             guard let self else { return }
             guard status == 200, let tree = (json as? [String: Any])?["tree"] as? [[String: Any]] else {
@@ -445,6 +472,11 @@ final class CairnService: ObservableObject {
                 return path
             })
             self.vaults[repo, default: Vault()].noteCount = existing.count
+            self.vaults[repo, default: Vault()].dailyDates = Set(existing.compactMap { path -> String? in
+                guard path.hasPrefix(dailyPrefix) else { return nil }
+                let name = String(path.dropFirst(dailyPrefix.count).dropLast(3))
+                return Self.isDayKey(name) ? name : nil
+            })
             self.loadRecent(repo: repo, prefix: prefix, existing: existing, token: token)
         }
     }
@@ -508,7 +540,7 @@ final class CairnService: ObservableObject {
         }
     }
 
-    /// A note path inside the vault folder (Cairn's "Folder in the repo" setting).
+    /// A note path inside the vault folder (Slate's "Folder in the repo" setting).
     static func inVault(_ path: String, folder: String) -> String {
         let prefix = folderPrefix(folder)
         return path.hasPrefix(prefix) ? path : prefix + path
@@ -538,7 +570,8 @@ final class CairnService: ObservableObject {
     }
 
     private func loadText(repo: String, path: String, token: String, completion: @escaping (String?) -> Void) {
-        github.get("/repos/\(repo)/contents/\(Self.encodePath(path))", token: token) { json, status in
+        // Fresh, or a refresh just after a tick or capture would bring back the cached note from before it.
+        github.get("/repos/\(repo)/contents/\(Self.encodePath(path))", token: token, fresh: true) { json, status in
             guard status == 200, let object = json as? [String: Any], let encoded = object["content"] as? String,
                   let data = Data(base64Encoded: encoded.replacingOccurrences(of: "\n", with: "")) else {
                 return completion(nil)
@@ -550,47 +583,116 @@ final class CairnService: ObservableObject {
     // MARK: Writing
 
     /// Adds a bullet (or to-do) to a note — today's daily note by default — and commits it.
-    /// Cairn merges line by line, so this plays nicely with edits made in the app.
-    func capture(_ text: String, repo rawRepo: String, path: String, asTodo: Bool, completion: @escaping (Bool) -> Void) {
-        let repo = Self.normalize(rawRepo)
+    /// Slate merges line by line, so this plays nicely with edits made in the app.
+    func capture(_ text: String, repo: String, path: String, asTodo: Bool, completion: @escaping (Bool) -> Void) {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty, repo.contains("/"), let token else { return completion(false) }
+        guard !line.isEmpty else { return completion(false) }
+        edit(repo: repo, path: path, message: "Quick note from Home Widgets", completion: completion) { existing in
+            var updated = existing
+            if !updated.isEmpty && !updated.hasSuffix("\n") { updated += "\n" }
+            return updated + (asTodo ? "- [ ] " : "- ") + line + "\n"
+        }
+    }
+
+    /// Ticks or unticks a to-do (`- [ ] task` ↔ `- [x] task`): the `occurrence`-th task line whose text is
+    /// `task`, counting in note order, so two "Write up" subtasks are told apart.
+    func setTodo(_ task: String, occurrence: Int, done: Bool, repo: String, path: String, completion: @escaping (Bool) -> Void) {
+        edit(repo: repo, path: path, message: done ? "Done: \(task)" : "Not done: \(task)", completion: completion) { existing in
+            var lines = existing.components(separatedBy: "\n")
+            let matches = lines.indices.filter { Self.todo(in: lines[$0])?.text == task }
+            guard occurrence < matches.count else { return nil }
+            let index = matches[occurrence]
+            guard Self.todo(in: lines[index])?.done == !done,
+                  let box = lines[index].range(of: done ? "[ ]" : "[x]", options: .caseInsensitive) else { return nil }
+            lines[index] = lines[index].replacingCharacters(in: box, with: done ? "[x]" : "[ ]")
+            return lines.joined(separator: "\n")
+        }
+    }
+
+    /// A Markdown task line (`- [ ] text`, `* [x] text`), or nil for anything else.
+    static func todo(in line: String) -> (text: String, done: Bool)? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let head = Array(trimmed.prefix(6))
+        guard trimmed.count > 6, head[0] == "-" || head[0] == "*", head[1] == " ", head[2] == "[", head[4] == "]", head[5] == " ",
+              " xX".contains(head[3]) else { return nil }
+        return (String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces), head[3] != " ")
+    }
+
+    /// Reads a note, changes it with `transform` (nil = leave it alone) and commits the result.
+    /// Edits to one repo run one after another, so each reads the sha the previous one wrote.
+    private func edit(repo rawRepo: String, path: String, message: String, completion: @escaping (Bool) -> Void,
+                      transform: @escaping (String) -> String?) {
+        let repo = Self.normalize(rawRepo)
+        guard repo.contains("/"), let token else { return completion(false) }
+        let run: () -> Void = { [weak self] in
+            self?.write(repo: repo, path: path, message: message, token: token, retry: true, transform: transform) { ok in
+                completion(ok)
+                self?.nextEdit(repo)
+            }
+        }
+        if sending.contains(repo) {
+            queuedEdits[repo, default: []].append(run)
+        } else {
+            sending.insert(repo)
+            run()
+        }
+    }
+
+    /// Starts the next waiting edit for `repo`, or marks the repo idle.
+    private func nextEdit(_ repo: String) {
+        guard var queue = queuedEdits[repo], !queue.isEmpty else {
+            sending.remove(repo)
+            return
+        }
+        let next = queue.removeFirst()
+        queuedEdits[repo] = queue
+        next()
+    }
+
+    /// One read-change-write. A 409 means the note changed in between (Slate synced), so it re-reads and tries once more.
+    private func write(repo: String, path: String, message: String, token: String, retry: Bool,
+                       transform: @escaping (String) -> String?, completion: @escaping (Bool) -> Void) {
         let apiPath = "/repos/\(repo)/contents/\(Self.encodePath(path))"
-        sending.insert(repo)
-        github.get(apiPath, token: token) { [weak self] json, status in
+        github.get(apiPath, token: token, fresh: true) { [weak self] json, status in
             guard let self else { return }
             var existing = ""
             var sha: String?
-            if status == 200, let object = json as? [String: Any] {
+            if status == 200 {
+                // A note GitHub won't inline (over 1 MB) must never be replaced by an "empty" one.
+                guard let object = json as? [String: Any], let encoded = object["content"] as? String,
+                      let data = Data(base64Encoded: encoded.replacingOccurrences(of: "\n", with: "")),
+                      let text = String(data: data, encoding: .utf8) else { return completion(false) }
+                existing = text
                 sha = object["sha"] as? String
-                if let encoded = object["content"] as? String,
-                   let data = Data(base64Encoded: encoded.replacingOccurrences(of: "\n", with: "")) {
-                    existing = String(data: data, encoding: .utf8) ?? ""
-                }
+            } else if status != 404 {
+                return completion(false)
             }
-            var updated = existing
-            if !updated.isEmpty && !updated.hasSuffix("\n") { updated += "\n" }
-            updated += (asTodo ? "- [ ] " : "- ") + line + "\n"
-            var body: [String: Any] = [
-                "message": "Quick note from Home Widgets",
-                "content": Data(updated.utf8).base64EncodedString(),
-            ]
+            guard let updated = transform(existing) else { return completion(false) }
+            var body: [String: Any] = ["message": message, "content": Data(updated.utf8).base64EncodedString()]
             if let sha { body["sha"] = sha }
             self.github.send("PUT", apiPath, body: body, token: token) { _, putStatus in
-                self.sending.remove(repo)
+                if putStatus == 409 && retry {
+                    return self.write(repo: repo, path: path, message: message, token: token, retry: false,
+                                      transform: transform, completion: completion)
+                }
                 let ok = putStatus == 200 || putStatus == 201
-                completion(ok)
                 if ok {
-                    self.vaults[repo, default: Vault()].todayText = Self.body(of: updated)
+                    // Only today's note feeds `todayText`; a capture into Inbox.md used to replace it.
+                    if (path as NSString).lastPathComponent == Self.dailyPath(folder: "") {
+                        self.vaults[repo, default: Vault()].todayText = Self.body(of: updated)
+                        self.vaults[repo, default: Vault()].todayFile = path
+                        self.vaults[repo, default: Vault()].dailyDates.insert(Self.dayKey())
+                    }
                     self.lastRefresh = [:]
                 }
+                completion(ok)
             }
         }
     }
 
     // MARK: Opening
 
-    /// Opens a note in your Cairn web app (if you set its address) or on GitHub.
+    /// Opens a note in Slate on the web (when the widget has its address) or on GitHub.
     func open(path: String?, repo rawRepo: String, webAddress: String, folder: String = "") {
         let repo = Self.normalize(rawRepo)
         let prefix = Self.folderPrefix(folder)

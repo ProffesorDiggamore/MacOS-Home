@@ -61,14 +61,13 @@ struct WidgetView: View {
         case .quote: QuoteWidget(model: model)
         case .bigDate: BigDateWidget(model: model)
         case .timeRings: TimeRingsWidget(model: model)
-        case .abstractArt: ArtSceneWidget(model: model, defaultStyle: .ribbons)
-        case .meshGradient: MeshGradientWidget(model: model)
-        case .flowingWaves: ArtSceneWidget(model: model, defaultStyle: .waves, defaultPalette: "ocean")
-        case .aurora: ArtSceneWidget(model: model, defaultStyle: .aurora, defaultPalette: "sequoia")
-        case .dunes: ArtSceneWidget(model: model, defaultStyle: .dunes, defaultPalette: "sunset")
-        case .spirograph: SpirographWidget(model: model)
-        case .orbits: ArtSceneWidget(model: model, defaultStyle: .orbitals, defaultPalette: "ventura")
         case .breathe: BreatheWidget(model: model)
+        case .dotClock: DotClockWidget(model: model)
+        case .devServers: DevServersWidget(model: model)
+        case .gitStatus: GitStatusWidget(model: model)
+        case .devTools: DevToolsWidget(model: model)
+        case .onThisDay: OnThisDayWidget(model: model)
+        case .deviceBatteries: DeviceBatteriesWidget(model: model)
         default: EmptyView()
         }
     }
@@ -136,7 +135,10 @@ struct WidgetView: View {
         switch model.kind {
         case .github: GitHubWidget(model: model)
         case .contributions: ContributionsWidget(model: model)
-        case .cairn: CairnWidget(model: model)
+        case .cairn: SlateNotesWidget(model: model)
+        case .slateToday: SlateTodayWidget(model: model)
+        case .slateStreak: SlateStreakWidget(model: model)
+        case .ciRuns: ActionsWidget(model: model)
         case .mail: MailWidget(model: model)
         case .news: NewsWidget(model: model)
         case .hackerNews: HackerNewsWidget(model: model)
@@ -167,16 +169,7 @@ struct WidgetView: View {
     private var funWidget: some View {
         switch model.kind {
         case .crabPet: CrabPetWidget(model: model)
-        case .lavaLamp: LavaLampWidget(model: model)
-        case .aquarium: AquariumWidget(model: model)
-        case .digitalRain: DigitalRainWidget(model: model)
-        case .nightSky: NightSkyWidget(model: model)
         case .lifeGame: LifeGameWidget(model: model)
-        case .bounce: BounceWidget(model: model)
-        case .moodGradient: MoodGradientWidget(model: model)
-        case .palette: PaletteWidget(model: model)
-        case .dice: DiceWidget(model: model)
-        case .plant: PlantWidget(model: model)
         default: v3Widget
         }
     }

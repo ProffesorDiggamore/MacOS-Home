@@ -81,16 +81,39 @@ func render(pixels: Int) -> Data {
          in: context, top: 0.82, bottom: 0.7)
     fill(rhombus(centerY: top, halfWidth: layerWidth, halfHeight: layerWidth * slope, radius: 30), in: context, top: 1.0, bottom: 0.86)
 
-    return rep.representation(using: .png, properties: [:])!
+    return grayPNG(rep)
+}
+
+/// The icon is all greys, so store one grey channel plus alpha instead of RGBA: same look, far smaller files.
+func grayPNG(_ rep: NSBitmapImageRep) -> Data {
+    let width = rep.pixelsWide, height = rep.pixelsHigh
+    var pixels = [UInt8](repeating: 0, count: width * height * 2)
+    for y in 0..<height {
+        for x in 0..<width {
+            let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) ?? .clear
+            let index = (y * width + x) * 2
+            pixels[index] = UInt8((color.redComponent * 0.3 + color.greenComponent * 0.59 + color.blueComponent * 0.11) * 255 + 0.5)
+            pixels[index + 1] = UInt8(color.alphaComponent * 255 + 0.5)
+        }
+    }
+    let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 16, bytesPerRow: width * 2,
+                        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                        provider: CGDataProvider(data: Data(pixels) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+    let data = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, image, nil)
+    CGImageDestinationFinalize(destination)
+    return data as Data
 }
 
 let resources = URL(fileURLWithPath: "Resources", isDirectory: true)
 let iconset = FileManager.default.temporaryDirectory.appendingPathComponent("AppIcon.iconset", isDirectory: true)
 try? FileManager.default.removeItem(at: iconset)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
-for size in [16, 32, 128, 256, 512] {
-    try render(pixels: size).write(to: iconset.appendingPathComponent("icon_\(size)x\(size).png"))
-    try render(pixels: size * 2).write(to: iconset.appendingPathComponent("icon_\(size)x\(size)@2x.png"))
+// Each pixel size once: 32×32 is the same picture as 16×16@2x, and so on, so the duplicates are left out.
+let names = [16: "16x16", 32: "16x16@2x", 64: "32x32@2x", 128: "128x128", 256: "128x128@2x", 512: "256x256@2x", 1024: "512x512@2x"]
+for (pixels, name) in names {
+    try render(pixels: pixels).write(to: iconset.appendingPathComponent("icon_\(name).png"))
 }
 try render(pixels: 1024).write(to: resources.appendingPathComponent("AppIcon.png"))
 

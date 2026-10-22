@@ -178,28 +178,45 @@ struct MoreWidgetOptions: View {
             }
         case .contributions, .mail:
             Section { AccountsLink() }
-        case .cairn:
-            Section("Cairn vault") {
-                TextField("Repo", text: model.binding(CairnKeys.repo), prompt: Text("you/Cairn"))
-                TextField("Only this folder (optional)", text: model.binding(CairnKeys.folder), prompt: Text("All notes"))
-                TextField("Daily notes folder", text: model.binding(CairnKeys.dailyFolder), prompt: Text("Daily"))
-                TextField("Cairn web address (optional)", text: model.binding(CairnKeys.web), prompt: Text("cairn-notes.netlify.app"))
-                Text("With your Cairn address set, clicking a note opens it in Cairn. Otherwise it opens on GitHub.")
+        case .cairn, .slateToday, .slateStreak:
+            Section("Slate vault") {
+                TextField("Repo", text: model.binding(SlateKeys.repo), prompt: Text("you/notes"))
+                TextField("Only this folder (optional)", text: model.binding(SlateKeys.folder), prompt: Text("All notes"))
+                TextField("Daily notes folder", text: model.binding(SlateKeys.dailyFolder), prompt: Text("Daily"))
+                TextField("Slate web address", text: model.binding(SlateKeys.web), prompt: Text(Slate.web))
+                Text("Clicking a note opens it in Slate at this address. Clear it to open notes on GitHub instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if model.kind != .cairn { AccountsLink() }
+            }
+            Section("Look") {
+                Toggle("Slate grey background", isOn: model.binding(SlateKeys.stone))
+                Text("Off, the widget follows your widget style (Frosted Glass, Liquid Glass, Solid, Tinted or Clear) like every other widget.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("Quick capture") {
-                OptionPicker("Add notes to", selection: model.binding(CairnKeys.captureTarget))
-                if model[CairnKeys.captureTarget] == .note {
-                    TextField("Note path", text: model.binding(CairnKeys.inbox), prompt: Text("Inbox.md"))
+            if model.kind == .cairn {
+                Section("Quick capture") {
+                    OptionPicker("Add notes to", selection: model.binding(SlateKeys.captureTarget))
+                    if model[SlateKeys.captureTarget] == .note {
+                        TextField("Note path", text: model.binding(SlateKeys.inbox), prompt: Text("Inbox.md"))
+                    }
+                    Toggle("Add as to-dos (- [ ])", isOn: model.binding(SlateKeys.asTodo))
                 }
-                Toggle("Add as to-dos (- [ ])", isOn: model.binding(CairnKeys.asTodo))
+                Section("Large size shows") {
+                    OptionPicker("Content", selection: model.binding(SlateKeys.show))
+                    if model[SlateKeys.show] == .pinned {
+                        TextField("Pinned note path", text: model.binding(SlateKeys.pinned), prompt: Text("Projects/Plan.md"))
+                    }
+                    AccountsLink()
+                }
             }
-            Section("Large size shows") {
-                OptionPicker("Content", selection: model.binding(CairnKeys.show))
-                if model[CairnKeys.show] == .pinned {
-                    TextField("Pinned note path", text: model.binding(CairnKeys.pinned), prompt: Text("Projects/Plan.md"))
-                }
+        case .ciRuns:
+            Section("GitHub Actions") {
+                TextField("Repos", text: model.binding(ActionsKeys.repos), prompt: Text("you/app, you/site"))
+                Text("Separate repos with commas. Leave it empty to follow the repos you pushed to most recently.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 AccountsLink()
             }
         case .news:
@@ -295,19 +312,6 @@ struct MoreWidgetOptions: View {
             Section("Claude Crab") {
                 TextField("Name", text: model.binding(CrabPetKeys.name))
                 Toggle("React to Claude Code sessions", isOn: model.binding(CrabPetKeys.reactsToClaude))
-            }
-        case .lavaLamp:
-            Section("Lava Lamp") { OptionPicker("Colors", selection: model.binding(LavaKeys.theme)) }
-        case .moodGradient:
-            Section("Mood Gradient") { OptionPicker("Palette", selection: model.binding(MoodKeys.palette)) }
-        case .bounce:
-            Section("Bouncing Text") { TextField("Text", text: model.binding(BounceKeys.text)) }
-        case .plant:
-            Section("Pixel Plant") {
-                TextField("Name", text: model.binding(PlantKeys.name))
-                Text("Water it once a day. Miss two days and it starts to wilt.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         default:
             V3WidgetOptions(model: model)
@@ -411,25 +415,40 @@ struct V3WidgetOptions: View {
             }
         case .bigDate:
             Section("Big Date") { Toggle("Gradient numbers", isOn: model.binding(BigDateKeys.gradient)) }
-        case .abstractArt, .flowingWaves, .aurora, .dunes, .orbits, .meshGradient, .spirograph:
-            Section("Art") {
-                if model.kind == .abstractArt {
-                    Picker("Style", selection: Binding(get: { ArtStyle(rawValue: model[ArtKeys.style]) ?? .ribbons },
-                                                       set: { model.config[ArtKeys.style] = $0.rawValue })) {
-                        ForEach(ArtStyle.allCases) { Text($0.label).tag($0) }
-                    }
-                }
-                Picker("Colors", selection: model.binding(ArtKeys.palette)) {
-                    ForEach(ArtPalette.all) { Text($0.name).tag($0.id) }
-                }
-                if model.kind != .meshGradient && model.kind != .spirograph {
-                    Toggle("Gentle motion", isOn: model.binding(ArtKeys.animate))
-                }
-                Button("New Design") { model.config[ArtKeys.seed] = Int.random(in: 1...999_999) }
-                Text("Like one so much you want it everywhere? Make it your wallpaper in Settings › Wallpapers.").font(.caption).foregroundStyle(.secondary)
-            }
         case .breathe:
             Section("Breathe") { OptionPicker("Rhythm", selection: model.binding(BreatheKeys.pattern)) }
+        case .dotClock:
+            Section("Dot Clock") {
+                OptionPicker("Color", selection: model.binding(DotClockKeys.color))
+                Toggle("24-hour time", isOn: model.binding(DotClockKeys.use24Hour))
+                Toggle("Show seconds (medium and bigger)", isOn: model.binding(DotClockKeys.showSeconds))
+            }
+        case .gitStatus:
+            Section("Git Status") {
+                PathPicker(title: "Repository", path: model.binding(GitKeys.path), placeholder: "None", chooseFolders: true)
+                OptionPicker("Click opens in", selection: model.binding(GitKeys.opener))
+                Text("Checks the repo every 20 seconds while the widget is visible. Nothing is fetched from the internet.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .devServers:
+            Section {
+                Text("Lists programs you started that are listening on a port below 49152, like Vite, Node, Python and databases. Click a row to open it in your browser.")
+                    .foregroundStyle(.secondary)
+            }
+        case .devTools:
+            Section {
+                Text("Click any value to copy it. The large size adds clipboard buttons: Base64 encode or decode, URL-encode, pretty-print JSON, and change case.")
+                    .foregroundStyle(.secondary)
+            }
+        case .onThisDay:
+            Section {
+                Text("Click for another event from today's date. Right-click to read it on Wikipedia.").foregroundStyle(.secondary)
+            }
+        case .deviceBatteries:
+            Section {
+                Text("Shows your Mac and any connected Bluetooth device that reports its battery, such as AirPods, Magic Mouse or a keyboard. Checks every two minutes.")
+                    .foregroundStyle(.secondary)
+            }
         case .recentFiles, .screenshots:
             Section {
                 Text(model.kind == .screenshots

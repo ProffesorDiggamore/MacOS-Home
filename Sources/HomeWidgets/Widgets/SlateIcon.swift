@@ -1,10 +1,10 @@
 import SwiftUI
 import AppKit
 
-/// Draws a Cairn page icon. Cairn stores one of three things in a note's `icon:` field:
+/// Draws a Slate page icon. Slate stores one of three things in a note's `icon:` field:
 /// an emoji, a made icon recipe (`ci:1|shape|bg|fg|glyph`), or a tiny `data:image/…` picture.
 /// Without this the widget printed the recipe text instead of the icon.
-struct CairnIcon: View {
+struct SlateIcon: View {
     let value: String
     var size: CGFloat = 16
 
@@ -35,8 +35,8 @@ struct CairnIcon: View {
             let parts = value.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
             guard parts.count >= 5 else { return nil }
             shape = parts[1]
-            bg = parts[2].split(separator: ",").compactMap { CairnIcon.color(String($0)) }
-            fg = CairnIcon.color(parts[3]) ?? .white
+            bg = parts[2].split(separator: ",").compactMap { SlateIcon.color(String($0)) }
+            fg = SlateIcon.color(parts[3]) ?? .white
             glyph = parts[4...].joined(separator: "|")
         }
     }
@@ -76,7 +76,7 @@ struct CairnIcon: View {
         }
     }
 
-    // Cairn's symbol names → SF Symbols.
+    // Slate's symbol names → SF Symbols.
     static let symbols: [String: String] = [
         "sparkles": "sparkles", "star": "star.fill", "heart": "heart.fill", "rocket": "paperplane.fill",
         "lightbulb": "lightbulb.fill", "brain": "brain.head.profile", "book": "book.fill", "graduation": "graduationcap.fill",
@@ -107,14 +107,14 @@ struct CairnIcon: View {
     }
 }
 
-/// A Cairn pixel drawing: "size:palette:cells", cells run-length encoded (3a = three of colour a, . = clear).
+/// A Slate pixel drawing: "size:palette:cells", cells run-length encoded (3a = three of colour a, . = clear).
 private struct PixelGlyph: View {
     let recipe: String
 
     var body: some View {
         let parts = recipe.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
         let side = max(4, min(32, Int(parts.first ?? "") ?? 12))
-        let palette = (parts.count > 1 ? parts[1] : "").split(separator: ",").compactMap { CairnIcon.color(String($0)) }
+        let palette = (parts.count > 1 ? parts[1] : "").split(separator: ",").compactMap { SlateIcon.color(String($0)) }
         let cells = Self.unpack(parts.count > 2 ? parts[2] : "", total: side * side)
         Canvas { context, canvas in
             let cell = canvas.width / CGFloat(side)

@@ -230,6 +230,10 @@ final class AppearanceSettings: ObservableObject {
     @Published var themeColors: [String] { didSet { defaults.set(themeColors, forKey: "themeColors") } }
     /// The colour used when `colorMode` is `.single`, as RRGGBB.
     @Published var singleColor: String { didSet { defaults.set(singleColor, forKey: "singleColor") } }
+    /// Points the widget grid is moved up (positive) or down from the middle of the screen.
+    @Published var gridOffset: Double { didSet { defaults.set(gridOffset, forKey: "gridOffset") } }
+    /// How many rows of widgets to use; 0 means as many as fit.
+    @Published var gridRows: Int { didSet { defaults.set(gridRows, forKey: "gridRows") } }
 
     init() {
         style = WidgetStyle(rawValue: defaults.string(forKey: "style") ?? "") ?? .glass
@@ -250,6 +254,8 @@ final class AppearanceSettings: ObservableObject {
         let savedTheme = defaults.stringArray(forKey: "themeColors") ?? []
         themeColors = savedTheme.count == ThemeSlot.allCases.count ? savedTheme : ThemePreset.standard
         singleColor = defaults.string(forKey: "singleColor") ?? "34C759"
+        gridOffset = defaults.double(forKey: "gridOffset")
+        gridRows = defaults.integer(forKey: "gridRows")
     }
 
     var accentColor: Color { accent.color }

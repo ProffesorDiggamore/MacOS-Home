@@ -37,12 +37,12 @@ enum StudioScene: String, CaseIterable, Identifiable {
     fileprivate var isGlass: Bool { self == .glassRibbon || self == .darkGlass || self == .glassPills }
 }
 
-/// The studio's colours: backdrop, lights and materials. All neutral apart from a hint of blue or film colour.
+/// The studio's colours: backdrop, lights and materials. Moss and Your Colors are built from three colours.
 enum StudioTone: String, CaseIterable, Identifiable {
-    case silver, obsidian, pearl, midnight, prism
+    case silver, obsidian, pearl, midnight, prism, moss, custom
 
     var id: String { rawValue }
-    var label: String { rawValue.capitalized }
+    var label: String { self == .custom ? "Your Colors" : rawValue.capitalized }
     /// Two RRGGBB colours for the picker swatch.
     var swatch: (UInt32, UInt32) {
         switch self {
@@ -51,7 +51,58 @@ enum StudioTone: String, CaseIterable, Identifiable {
         case .pearl: return (0xFFFFFF, 0xC9CBD0)
         case .midnight: return (0x6E8BD8, 0x070B1C)
         case .prism: return (0xE6E2F5, 0x3C3F4A)
+        case .moss: return (0x8FAA62, 0x0B100B)
+        case .custom:
+            let colors = CustomTone.colors
+            return (CustomTone.hex(colors.accent), CustomTone.hex(colors.background))
         }
+    }
+    /// The three colours behind Moss and Your Colors; nil for the hand-tuned neutral tones.
+    var colors: CustomTone.Colors? {
+        switch self {
+        case .moss: return CustomTone.moss
+        case .custom: return CustomTone.colors
+        default: return nil
+        }
+    }
+    /// Identifies the exact colours, so cached previews refresh when Your Colors change.
+    var cacheKey: String {
+        guard self == .custom else { return rawValue }
+        let colors = CustomTone.colors
+        return "custom-\(CustomTone.hex(colors.background))-\(CustomTone.hex(colors.ink))-\(CustomTone.hex(colors.accent))"
+    }
+}
+
+/// The colours of the Your Colors tone: a background, an ink (lines, metal) and an accent.
+/// Set from Settings › Wallpapers on the main thread, read by renders on background threads.
+enum CustomTone {
+    struct Colors: Equatable {
+        var background: SIMD3<Float>
+        var ink: SIMD3<Float>
+        var accent: SIMD3<Float>
+
+        var isDark: Bool { luminance(background) < 0.45 }
+    }
+
+    static let moss = Colors(background: SIMD3(0.045, 0.06, 0.045), ink: SIMD3(0.8, 0.82, 0.78), accent: SIMD3(0.45, 0.63, 0.24))
+    static let standard = Colors(background: SIMD3(0.06, 0.06, 0.07), ink: SIMD3(0.9, 0.9, 0.9), accent: SIMD3(0.36, 0.55, 0.95))
+
+    private static let lock = NSLock()
+    private static var stored = standard
+    static var colors: Colors {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
+    }
+
+    static func luminance(_ c: SIMD3<Float>) -> Float { 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z }
+
+    static func hex(_ c: SIMD3<Float>) -> UInt32 {
+        let r = UInt32(max(0, min(255, c.x * 255 + 0.5))), g = UInt32(max(0, min(255, c.y * 255 + 0.5))), b = UInt32(max(0, min(255, c.z * 255 + 0.5)))
+        return r << 16 | g << 8 | b
+    }
+
+    static func color(hex: UInt32) -> SIMD3<Float> {
+        SIMD3(Float((hex >> 16) & 0xFF) / 255, Float((hex >> 8) & 0xFF) / 255, Float(hex & 0xFF) / 255)
     }
 }
 
@@ -203,8 +254,31 @@ enum StudioRenderer {
             p.skyTop = gray(0.45); p.skyMid = gray(0.06); p.skyBottom = gray(0.015)
             p.metal = rgb(0.94, 0.94, 0.95, 0.85); p.base = rgb(0.14, 0.14, 0.15, 0.05)
             p.glass = rgb(0.1, 0.09, 0.08, 1.5)
+        case .moss, .custom:
+            applyColors(&p, tone.colors ?? CustomTone.standard)
         }
         return p
+    }
+
+    private static func linear(_ c: SIMD3<Float>) -> SIMD3<Float> { SIMD3(pow(c.x, 2.2), pow(c.y, 2.2), pow(c.z, 2.2)) }
+
+    /// An accent colour scaled so its brightest channel is 1: the hue to tint metal and lights with.
+    private static func hue(_ c: SIMD3<Float>) -> SIMD3<Float> { c / max(0.05, max(c.x, max(c.y, c.z))) }
+
+    /// Backdrop from the background colour, chrome tinted by the accent.
+    private static func applyColors(_ p: inout Params, _ colors: CustomTone.Colors) {
+        let back = linear(colors.background)
+        let tint = SIMD3<Float>(repeating: 0.65) + hue(colors.accent) * 0.35
+        if colors.isDark {
+            let lift = linear(colors.background * 0.7 + colors.accent * 0.3)
+            p.skyTop = SIMD4(lift * 0.6 + back * 0.4, 0); p.skyMid = SIMD4(back, 0); p.skyBottom = SIMD4(back * 0.2, 0)
+            p.metal = SIMD4(tint * 0.82, 0); p.base = SIMD4(back * 0.5, 0.05)
+            p.glass = SIMD4(hue(colors.accent) * 1.8, 1.5); p.misc.x = 1.12; p.misc.y = 0.42; p.misc.w = 0.004
+        } else {
+            p.skyTop = SIMD4(back, 0); p.skyMid = SIMD4(back * 0.8, 0); p.skyBottom = SIMD4(back * 0.58, 0)
+            p.metal = SIMD4(tint * 0.95, 0); p.base = SIMD4(back * 0.88, 0.2)
+            p.glass = SIMD4(linear(colors.accent) * 0.6, 1.5); p.misc.x = 1.05; p.misc.y = 0.18; p.misc.w = 0.002
+        }
     }
 
     private static func rotation(_ a: SIMD3<Float>) -> (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>) {
@@ -239,6 +313,11 @@ enum StudioRenderer {
                                   SIMD3(0.7, 0.8, 1.0) * 1.8, SIMD3(0.05, 0.1, 0.3) * 0.5]
         case .prism: colors = [SIMD3(1.0, 0.93, 0.86) * 2.6, SIMD3(0.82, 0.9, 1.0) * 4.0, SIMD3(1.0, 0.85, 0.95) * 1.8,
                                SIMD3(repeating: 2.2), SIMD3(repeating: 0.14)]
+        case .moss, .custom:
+            let palette = tone.colors ?? CustomTone.standard
+            let tint = SIMD3<Float>(repeating: 0.6) + hue(palette.accent) * 0.4
+            let base: [Float] = palette.isDark ? [1.3, 3.0, 0.9, 1.1, 0.05] : [1.2, 1.4, -0.55, 0.8, 0.22]
+            colors = base.enumerated().map { index, value in index == 1 ? SIMD3(repeating: value) : tint * value }
         }
 
         return rig.enumerated().map { index, light in
@@ -267,4 +346,17 @@ enum StudioRenderer {
             return SIMD4(x, 0.65 * sin(bend * x + phase), 0.6 * cos(1.3 * x + phase2), 0.28 + 0.3 * r())
         }
     }
+}
+
+/// A tiny seeded random number generator, so a wallpaper with the same seed always looks the same.
+struct ArtRandom {
+    private var state: UInt64
+    init(_ seed: Int) { state = UInt64(bitPattern: Int64(seed)) &* 0x9E37_79B9_7F4A_7C15 | 1 }
+    mutating func next() -> Double {
+        state ^= state << 13
+        state ^= state >> 7
+        state ^= state << 17
+        return Double(state % 1_000_000) / 1_000_000
+    }
+    mutating func range(_ a: Double, _ b: Double) -> Double { a + (b - a) * next() }
 }

@@ -198,23 +198,26 @@ struct CrabPetWidget: View {
     @ViewBuilder
     private func scene(date: Date, size: CGSize, reacts: Bool) -> some View {
         let time = date.timeIntervalSinceReferenceDate
-        let crabWidth: CGFloat = model.family == .small ? 60 : 78
+        // The crab grows with the widget (limited by height, so wide sizes don't get a giant).
+        let narrow = size.width < 200
+        let crabWidth: CGFloat = min(size.width * (narrow ? 0.45 : 0.36), size.height * 0.5)
+        let scale: CGFloat = crabWidth / 78
         let crabHeight = crabWidth / 18 * 6 * 1.6
         let travel = max(1, size.width - crabWidth - 24)
         // Walk back and forth, pausing at each end.
-        let period = Double(travel) / 22 + 3
+        let period = Double(travel / scale) / 22 + 3
         let phase = (time / period).truncatingRemainder(dividingBy: 2)
         let progress = min(1, max(0, (phase < 1 ? phase : 2 - phase) * 1.25 - 0.125))
         let facingLeft = phase >= 1
         let walking = progress > 0.001 && progress < 0.999
         let x = 12 + travel * CGFloat(progress)
         let sinceJump = Date().timeIntervalSince(jumpStarted)
-        let jumpHeight: CGFloat = sinceJump < 0.6 ? CGFloat(sin(sinceJump / 0.6 * .pi)) * 30 : 0
+        let jumpHeight: CGFloat = sinceJump < 0.6 ? CGFloat(sin(sinceJump / 0.6 * .pi)) * 30 * scale : 0
         let working = reacts && claude.workingCount > 0
         let waiting = reacts && claude.waitingCount > 0
         let tick = Int(time * 6)
         let mood: CrabSprite.Mood = jumpHeight > 0 || waiting ? .happy : (working ? .working : (tick % 25 == 0 ? .blink : .normal))
-        let groundY = size.height - 22
+        let groundY = size.height - max(22, size.height * 0.1)
 
         ZStack(alignment: .topLeading) {
             // Ground line and a couple of pebbles.
@@ -227,16 +230,18 @@ struct CrabPetWidget: View {
                 .position(x: x + crabWidth / 2, y: groundY - crabHeight / 2 - jumpHeight)
             if working || waiting {
                 Text(working ? "thinking…" : "your turn!")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: 10 * max(1, scale * 0.8), weight: .semibold, design: .rounded))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Capsule().fill(Color.primary.opacity(0.1)))
-                    .position(x: x + crabWidth / 2, y: groundY - crabHeight - 14 - jumpHeight)
+                    .position(x: x + crabWidth / 2, y: groundY - crabHeight - 14 * max(1, scale) - jumpHeight)
             }
             Text(model[CrabPetKeys.name])
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 11 * max(1, scale * 0.8), weight: .semibold, design: .rounded))
                 .foregroundStyle(style.tone(Palette.claude))
-                .position(x: 30, y: 16)
+                .fixedSize()
+                .padding(.leading, 14)
+                .padding(.top, 10)
         }
     }
 }

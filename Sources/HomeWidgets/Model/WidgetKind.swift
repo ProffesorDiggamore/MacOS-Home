@@ -101,13 +101,17 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
     // Photos, Text & Media
     case nowPlaying, photo, sticker, text, verse, moonPhase
     // Fun & Aesthetic
-    case crabPet, lavaLamp, aquarium, digitalRain, nightSky, lifeGame, bounce, moodGradient, palette, dice, plant
+    case crabPet, lifeGame
     // Version 3
     case monthCalendar, upNext, agenda, classSchedule, homework, readingPlan
     case timer, webSearch, dictionary, converter, qrCode, password, colorPicker, recentFiles, screenshots
     case soundOutput, microphone, keepAwake, ipAddress, internet
     case airQuality, githubRepo, water, quote, bigDate, timeRings
-    case abstractArt, meshGradient, flowingWaves, aurora, dunes, spirograph, orbits, breathe
+    case breathe
+    // Version 4
+    case dotClock, devServers, gitStatus, devTools, onThisDay, deviceBatteries
+    // Version 5
+    case slateToday, slateStreak, ciRuns
 
     var id: String { rawValue }
 
@@ -203,7 +207,7 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
         case .contributions:
             return .init(title: "Contributions", summary: "Your GitHub contribution graph and streak.", symbol: "square.grid.4x3.fill", tint: .green, category: .web, sizes: flexible, defaultSize: .medium)
         case .cairn:
-            return .init(title: "Cairn Notes", summary: "Recent notes, a pinned note and quick capture from your Cairn notes repo on GitHub.", symbol: "mountain.2.fill", tint: .teal, category: .web, sizes: flexible, defaultSize: .medium)
+            return .init(title: "Slate Notes", summary: "Recent notes, today's page and quick capture from your Slate notes repo on GitHub.", symbol: "square.stack.3d.up.fill", tint: Slate.stone, category: .web, sizes: flexible, defaultSize: .medium)
         case .mail:
             return .init(title: "Mail", summary: "Unread email from Gmail, iCloud or any account in the Mail app.", symbol: "envelope.fill", tint: .blue, category: .web, sizes: flexible)
         case .news:
@@ -240,26 +244,8 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
         // Fun & Aesthetic
         case .crabPet:
             return .init(title: "Claude Crab", summary: "A little Claude crab that walks around your desktop.", symbol: "ant.fill", tint: Palette.claude, category: .fun, sizes: flexible, defaultSize: .medium)
-        case .lavaLamp:
-            return .init(title: "Lava Lamp", summary: "Slow, groovy blobs.", symbol: "drop.fill", tint: .pink, category: .fun, sizes: flexible)
-        case .aquarium:
-            return .init(title: "Aquarium", summary: "Fish swimming around a tiny tank.", symbol: "fish.fill", tint: .cyan, category: .fun, sizes: flexible, defaultSize: .medium)
-        case .digitalRain:
-            return .init(title: "Digital Rain", summary: "Falling green code, Matrix style.", symbol: "text.word.spacing", tint: .green, category: .fun, sizes: flexible)
-        case .nightSky:
-            return .init(title: "Night Sky", summary: "Twinkling stars and the occasional shooting star.", symbol: "sparkles", tint: .indigo, category: .fun, sizes: flexible, defaultSize: .medium)
         case .lifeGame:
             return .init(title: "Game of Life", summary: "Conway's cellular automaton, evolving forever.", symbol: "square.grid.3x3.middle.filled", tint: .mint, category: .fun, sizes: flexible)
-        case .bounce:
-            return .init(title: "Bouncing Text", summary: "Old-school DVD screensaver vibes. Will it hit the corner?", symbol: "arrow.up.and.down.and.arrow.left.and.right", tint: .purple, category: .fun, sizes: flexible, defaultSize: .medium)
-        case .moodGradient:
-            return .init(title: "Mood Gradient", summary: "Slowly shifting colors to set the vibe.", symbol: "paintpalette.fill", tint: .pink, category: .fun, sizes: flexible)
-        case .palette:
-            return .init(title: "Color Palette", summary: "Random color palettes. Click a color to copy it.", symbol: "swatchpalette.fill", tint: .orange, category: .fun, sizes: smallMedium, defaultSize: .medium)
-        case .dice:
-            return .init(title: "Dice & Coin", summary: "Roll a die or flip a coin.", symbol: "dice.fill", tint: .red, category: .fun, sizes: smallMedium)
-        case .plant:
-            return .init(title: "Pixel Plant", summary: "Water it every day and watch it grow.", symbol: "leaf.fill", tint: .green, category: .fun)
 
         // School & Planning
         case .monthCalendar:
@@ -321,25 +307,35 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
         case .timeRings:
             return .init(title: "Time Rings", summary: "How much of the day, week, month and year is done — as activity rings.", symbol: "circle.circle", tint: .pink, category: .time, sizes: [.small, .medium])
 
-        // Art
-        case .abstractArt:
-            return .init(title: "Abstract Art", summary: "Generative art in eight styles. Click for a new design.", symbol: "paintbrush.pointed.fill", tint: .purple, category: .fun, sizes: flexible)
-        case .meshGradient:
-            return .init(title: "Mesh Gradient", summary: "Slowly flowing colours, like Apple's newest wallpapers.", symbol: "circle.hexagongrid.fill", tint: .pink, category: .fun, sizes: flexible)
-        case .flowingWaves:
-            return .init(title: "Waves", summary: "Layers of colour rolling gently by.", symbol: "water.waves", tint: .blue, category: .fun, sizes: flexible, defaultSize: .medium)
-        case .aurora:
-            return .init(title: "Aurora", summary: "Northern lights dancing over a starry sky.", symbol: "sparkles", tint: .green, category: .fun, sizes: flexible, defaultSize: .medium)
-        case .dunes:
-            return .init(title: "Dunes", summary: "Calm desert hills under a low sun.", symbol: "sun.haze.fill", tint: .orange, category: .fun, sizes: flexible, defaultSize: .medium)
-        case .spirograph:
-            return .init(title: "Spirograph", summary: "A pattern drawing itself, over and over. Click for a new one.", symbol: "circle.dotted.circle", tint: .purple, category: .fun, sizes: flexible)
-        case .orbits:
-            return .init(title: "Orbits", summary: "Planets circling a glowing star.", symbol: "circle.dashed", tint: .indigo, category: .fun, sizes: flexible)
         case .breathe:
-            return .init(title: "Breathe", summary: "A calming breathing guide. Click to start.", symbol: "wind", tint: .cyan, category: .fun, sizes: [.small, .medium, .large])
+            return .init(title: "Breathe", summary: "A calming breathing guide that floats on your wallpaper. Click to start.", symbol: "wind", tint: .cyan, category: .fun, sizes: [.small, .medium, .large])
+
+        // Version 4
+        case .dotClock:
+            return .init(title: "Dot Clock", summary: "The time in glowing LED dots, like a dot-matrix sign.", symbol: "circle.grid.2x2.fill", tint: .orange, category: .time, sizes: [.small, .medium, .wide, .large], defaultSize: .medium)
+        case .devServers:
+            return .init(title: "Dev Servers", summary: "Everything running on a localhost port. Click one to open it.", symbol: "server.rack", tint: .green, category: .system, sizes: [.small, .medium, .large, .tall], defaultSize: .medium)
+        case .gitStatus:
+            return .init(title: "Git Status", summary: "Branch, changes and last commit for a repo on your Mac.", symbol: "arrow.triangle.branch", tint: .orange, category: .productivity, sizes: [.small, .medium, .large], defaultSize: .medium)
+        case .devTools:
+            return .init(title: "Dev Toolkit", summary: "Live Unix time, ISO dates, UUIDs and one-click clipboard encoders.", symbol: "curlybraces", tint: .indigo, category: .tools, sizes: [.small, .medium, .large], defaultSize: .medium)
+        case .onThisDay:
+            return .init(title: "On This Day", summary: "Something that happened on today's date, from Wikipedia.", symbol: "clock.arrow.circlepath", tint: .brown, category: .media, sizes: [.small, .medium, .wide, .large, .tall], defaultSize: .medium)
+        case .deviceBatteries:
+            return .init(title: "Device Batteries", summary: "Battery rings for your Mac, AirPods, mouse and keyboard.", symbol: "battery.75percent", tint: .green, category: .system, sizes: [.small, .medium, .large])
+
+        // Version 5
+        case .slateToday:
+            return .init(title: "Slate Today", summary: "The to-dos in today's Slate note. Click one to tick it off.", symbol: "square.stack.3d.up.fill", tint: Slate.stone, category: .web, sizes: [.small, .medium, .wide, .large, .portrait], defaultSize: .medium)
+        case .slateStreak:
+            return .init(title: "Slate Streak", summary: "Your daily-note streak and a year of the days you wrote.", symbol: "square.stack.3d.up.fill", tint: Slate.stone, category: .web, sizes: [.small, .medium, .wide, .large], defaultSize: .medium)
+        case .ciRuns:
+            return .init(title: "GitHub Actions", summary: "The latest CI run for each of your repos: passing, failing or running.", symbol: "checkmark.seal.fill", tint: .green, category: .web, sizes: [.small, .medium, .large, .tall], defaultSize: .medium)
         }
     }
+
+    /// Widgets drawn in Slate's colours with its logo.
+    var isSlate: Bool { self == .cairn || self == .slateToday || self == .slateStreak }
 
     var title: String { info.title }
     var summary: String { info.summary }
@@ -352,8 +348,7 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
     /// Widgets that animate continuously (they pause automatically when covered).
     var isAnimated: Bool {
         switch self {
-        case .crabPet, .lavaLamp, .aquarium, .digitalRain, .nightSky, .lifeGame, .bounce, .moodGradient,
-             .abstractArt, .meshGradient, .flowingWaves, .aurora, .dunes, .spirograph, .orbits, .breathe, .water:
+        case .crabPet, .lifeGame, .breathe, .water:
             return true
         default:
             return false

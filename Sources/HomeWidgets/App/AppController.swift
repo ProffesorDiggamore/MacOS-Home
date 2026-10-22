@@ -8,9 +8,9 @@ import ServiceManagement
 final class AppController: NSObject, NSMenuDelegate {
     static let shared = AppController()
 
-    private let store = WidgetStore.shared
+    let store = WidgetStore.shared
     private let appearance = AppearanceSettings.shared
-    private var panels: [UUID: WidgetPanelController] = [:]
+    private(set) var panels: [UUID: WidgetPanelController] = [:]
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
@@ -23,8 +23,17 @@ final class AppController: NSObject, NSMenuDelegate {
             installDefaultWidgets()
         }
         applyAppPresence()
+        DesktopGrid.verticalOffset = CGFloat(appearance.gridOffset)
+        DesktopGrid.rowLimit = appearance.gridRows
         tidyOntoGrid()
         syncPanels(store.widgets)
+
+        // Moving the grid (Settings › General › Grid) slides every widget along with it.
+        appearance.$gridOffset.combineLatest(appearance.$gridRows)
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] offset, rows in self?.moveGrid(offset: CGFloat(offset), rows: rows) }
+            .store(in: &cancellables)
 
         store.$widgets
             .dropFirst()
@@ -90,15 +99,32 @@ final class AppController: NSObject, NSMenuDelegate {
 
     // MARK: Widgets
 
+    /// Adds a widget in the first free slot. If the chosen size doesn't fit anywhere it
+    /// tries the widget's smaller sizes; if nothing fits, it says the desktop is full
+    /// and adds nothing, instead of stacking the new widget on top of another.
     @discardableResult
-    func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) -> WidgetModel {
+    func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) -> WidgetModel? {
         let chosen = size ?? kind.defaultSize
+        let area = { (s: WidgetSize) in s.cells.columns * s.cells.rows }
+        let fallbacks = kind.sizes.filter { area($0) < area(chosen) }.sorted { area($0) > area($1) }
         let screen = NSScreen.main ?? NSScreen.screens.first
         let grid = DesktopGrid(bounds: DesktopGrid.area(of: screen))
         let occupied = store.widgets.map(\.frame)
-        let rect = grid.firstFree(size: chosen, occupied: occupied).map { grid.rect(at: $0, size: chosen) }
-            ?? DesktopGrid.place(grid.rect(at: .init(column: 0, row: 0), size: chosen), size: chosen, occupied: occupied)
-        let model = WidgetModel(kind: kind, size: chosen, topLeft: CGPoint(x: rect.minX, y: rect.maxY))
+        var found: (WidgetSize, CGRect)?
+        for candidate in [chosen] + fallbacks {
+            let rect = grid.firstFree(size: candidate, occupied: occupied).map { grid.rect(at: $0, size: candidate) }
+                ?? DesktopGrid.place(grid.rect(at: .init(column: 0, row: 0), size: candidate), size: candidate, occupied: occupied)
+            if let rect {
+                found = (candidate, rect)
+                break
+            }
+        }
+        guard let (fitted, rect) = found else {
+            Self.showNoRoom("There's no free space for \(kind.title).",
+                            detail: "Remove a widget or make one smaller, then add it again.")
+            return nil
+        }
+        let model = WidgetModel(kind: kind, size: fitted, topLeft: CGPoint(x: rect.minX, y: rect.maxY))
         applyInitialConfig(to: model)
         store.add(model)
         if appearance.hidden {
@@ -117,6 +143,17 @@ final class AppController: NSObject, NSMenuDelegate {
         default:
             break
         }
+    }
+
+    /// Tells you a widget couldn't be placed because the grid is full.
+    static func showNoRoom(_ message: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     func removeWidget(_ id: UUID) {
@@ -147,6 +184,7 @@ final class AppController: NSObject, NSMenuDelegate {
         for model in ordered {
             let rect = grid.firstFree(size: model.size, occupied: placed).map { grid.rect(at: $0, size: model.size) }
                 ?? DesktopGrid.place(model.frame, size: model.size, occupied: placed)
+                ?? model.frame
             placed.append(rect)
             panels[model.id]?.move(to: rect, animated: true)
         }
@@ -159,8 +197,12 @@ final class AppController: NSObject, NSMenuDelegate {
     private var dragOriginals: [(id: UUID, size: WidgetSize, rect: CGRect)] = []
     private var dragPlan: [UUID: CGRect] = [:]
 
+    /// Where the dragged widget started, so it can go back there when there's no room.
+    private var dragHome: CGRect?
+
     func beginDrag(_ id: UUID) {
         dragOriginals = store.widgets.filter { $0.id != id }.map { ($0.id, $0.size, $0.frame) }
+        dragHome = store.widgets.first { $0.id == id }?.frame
         dragPlan = [:]
     }
 
@@ -187,6 +229,7 @@ final class AppController: NSObject, NSMenuDelegate {
                                                    size: other.size, occupied: occupied) else {
                 showPlan([:])
                 return DesktopGrid.place(frame, size: size, occupied: dragOriginals.map(\.rect))
+                    ?? dragHome ?? target
             }
             let moved = otherGrid.rect(at: cell, size: other.size)
             plan[other.id] = moved
@@ -214,13 +257,18 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         dragOriginals = []
         dragPlan = [:]
+        dragHome = nil
     }
 
     /// Moves saved widgets onto the grid once at launch, pulling apart any that overlap.
     private func tidyOntoGrid() {
         var placed: [CGRect] = []
         for model in store.widgets {
+            // A widget with nowhere to go (the desktop was over-full) snaps to its nearest slot;
+            // remove or shrink something and it can be dragged into the freed space.
+            let grid = DesktopGrid.forRect(model.frame)
             let rect = DesktopGrid.place(model.frame, size: model.size, occupied: placed)
+                ?? grid.rect(at: grid.nearestCell(to: model.frame, size: model.size), size: model.size)
             placed.append(rect)
             if rect.origin != model.frame.origin {
                 model.topLeft = CGPoint(x: rect.minX, y: rect.maxY)
@@ -286,7 +334,7 @@ final class AppController: NSObject, NSMenuDelegate {
             for kind in WidgetKind.allCases where kind.category == category {
                 let entry = menuItem(kind.title, #selector(quickAdd(_:)))
                 entry.representedObject = kind.rawValue
-                entry.image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil)
+                entry.image = kind.isSlate ? SlateLogo.menuImage : NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil)
                 entry.indentationLevel = 1
                 addMenu.addItem(entry)
             }

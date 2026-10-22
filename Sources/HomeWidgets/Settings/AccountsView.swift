@@ -4,9 +4,9 @@ import AppKit
 struct AccountsView: View {
     @ObservedObject private var github = GitHubService.shared
     @ObservedObject private var mail = MailService.shared
-    @ObservedObject private var cairn = CairnService.shared
+    @ObservedObject private var slate = SlateService.shared
     @State private var token = ""
-    @State private var cairnToken = ""
+    @State private var slateToken = ""
     @State private var connecting = false
     @State private var message: String?
 
@@ -21,7 +21,7 @@ struct AccountsView: View {
                         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.black))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("GitHub").font(.headline)
-                        Text("Used by the GitHub, Contributions and Cairn Notes widgets.")
+                        Text("Used by the GitHub, Contributions, GitHub Actions and Slate widgets.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -68,33 +68,33 @@ struct AccountsView: View {
                 }
             }
 
-            Section("Cairn Notes") {
-                Text("Cairn syncs your vault to a GitHub repository, so the Cairn widget talks to that repo directly. It reuses your GitHub token above, or you can paste the token you already use in Cairn (a fine-grained token with Contents read & write on your notes repo).")
+            Section("Slate Notes") {
+                Text("Slate (formerly Cairn) syncs your vault to a GitHub repository, so the Slate widgets talk to that repo directly. They reuse your GitHub token above, or you can paste the token you already use in Slate (a fine-grained token with Contents read & write on your notes repo).")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                if cairn.hasOwnToken {
+                if slate.hasOwnToken {
                     HStack {
-                        Label("Using your Cairn token", systemImage: "checkmark.circle.fill")
+                        Label("Using your Slate token", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(Color.green)
                         Spacer()
-                        Button("Remove") { cairn.setOwnToken(nil) }
+                        Button("Remove") { slate.setOwnToken(nil) }
                     }
                 } else {
                     HStack {
-                        SecureField("Cairn token (optional)", text: $cairnToken)
+                        SecureField("Slate token (optional)", text: $slateToken)
                             .textFieldStyle(.roundedBorder)
                         Button("Save") {
-                            cairn.setOwnToken(cairnToken)
-                            cairnToken = ""
+                            slate.setOwnToken(slateToken)
+                            slateToken = ""
                         }
-                        .disabled(cairnToken.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(slateToken.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    Label(github.isConnected ? "Using your GitHub token." : "Connect GitHub above or paste a Cairn token.",
+                    Label(github.isConnected ? "Using your GitHub token." : "Connect GitHub above or paste a Slate token.",
                           systemImage: github.isConnected ? "checkmark.circle" : "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Text("Then add a Cairn Notes widget. Quick capture adds bullets or to-dos to today's daily note, and Cairn picks them up on its next sync.")
+                Text("Then add Slate Notes, Slate Today or Slate Streak. Quick capture adds bullets or to-dos to today's daily note, and Slate picks them up on its next sync.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -117,7 +117,7 @@ struct AccountsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { github.loadToken(); cairn.loadToken() }
+        .onAppear { github.loadToken(); slate.loadToken() }
     }
 
     private func connect() {

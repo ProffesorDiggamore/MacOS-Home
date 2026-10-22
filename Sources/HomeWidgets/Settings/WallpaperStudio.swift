@@ -1,21 +1,108 @@
 import SwiftUI
 import AppKit
 
-/// Desktop wallpapers ray traced on the GPU — liquid chrome, glass, satin and soft clay under
-/// studio lights — rendered at 4K or better and set with one click.
+/// Every wallpaper the studio can make: ray-traced studio scenes, ink sketches and pixel art.
+enum WallpaperStyle: Hashable, Identifiable {
+    case studio(StudioScene)
+    case sketch(SketchScene)
+
+    enum Group: String, CaseIterable, Identifiable {
+        case studio = "Studio", sketch = "Sketch", poster = "Poster", glitch = "Glitch", pixel = "Pixel"
+        var id: String { rawValue }
+    }
+
+    static let all: [WallpaperStyle] = StudioScene.allCases.map { .studio($0) } + SketchScene.allCases.map { .sketch($0) }
+
+    init?(rawValue: String) {
+        if let scene = StudioScene(rawValue: rawValue) {
+            self = .studio(scene)
+        } else if let scene = SketchScene(rawValue: rawValue) {
+            self = .sketch(scene)
+        } else {
+            return nil
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .studio(let scene): return scene.rawValue
+        case .sketch(let scene): return scene.rawValue
+        }
+    }
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .studio(let scene): return scene.label
+        case .sketch(let scene): return scene.label
+        }
+    }
+    var summary: String {
+        switch self {
+        case .studio(let scene): return scene.summary
+        case .sketch(let scene): return scene.summary
+        }
+    }
+    var group: Group {
+        switch self {
+        case .studio: return .studio
+        case .sketch(let scene):
+            switch scene.group {
+            case .sketch: return .sketch
+            case .poster: return .poster
+            case .glitch: return .glitch
+            case .pixel: return .pixel
+            }
+        }
+    }
+
+    func render(tone: StudioTone, seed: Int, width: Int, height: Int, quality: StudioRenderer.Quality = .final,
+                progress: ((Double) -> Void)? = nil) -> CGImage? {
+        switch self {
+        case .studio(let scene):
+            return StudioRenderer.render(scene, tone: tone, seed: seed, width: width, height: height, quality: quality, progress: progress)
+        case .sketch(let scene):
+            return SketchRenderer.render(scene, tone: tone, seed: seed, width: width, height: height, progress: progress)
+        }
+    }
+}
+
+/// Desktop wallpapers: ray traced on the GPU (liquid chrome, glass, satin, soft clay) or drawn
+/// stroke by stroke (ink sketches, pixel art), rendered at 4K or better and set with one click.
 struct WallpaperStudioView: View {
     @AppStorage("studioScene") private var sceneRaw = StudioScene.glassRibbon.rawValue
     @AppStorage("studioTone") private var toneRaw = StudioTone.obsidian.rawValue
-    @AppStorage("wallpaperSeed") private var seed = 2026
+    /// Each style keeps its own shuffle, so shuffling one never re-renders the others.
+    @AppStorage("wallpaperSeeds") private var seedsRaw = ""
+    /// Your Colors: background, ink and accent as RRGGBB.
+    @AppStorage("wallpaperCustomColors") private var customRaw = ""
     @AppStorage("wallpaperResolution") private var resolutionRaw = OutputSize.best.rawValue
     @State private var preview: NSImage?
     @State private var previewing = false
     @State private var progress: Double?
     @State private var status: String?
 
-    private var scene: StudioScene { StudioScene(rawValue: sceneRaw) ?? .glassRibbon }
+    private var style: WallpaperStyle { WallpaperStyle(rawValue: sceneRaw) ?? .studio(.glassRibbon) }
     private var tone: StudioTone { StudioTone(rawValue: toneRaw) ?? .obsidian }
     private var resolution: OutputSize { OutputSize(rawValue: resolutionRaw) ?? .best }
+
+    private var seeds: [String: Int] {
+        var out: [String: Int] = [:]
+        for pair in seedsRaw.split(separator: ";") {
+            let parts = pair.split(separator: "=")
+            if parts.count == 2, let value = Int(parts[1]) { out[String(parts[0])] = value }
+        }
+        return out
+    }
+    private func seed(for style: WallpaperStyle) -> Int { seeds[style.rawValue] ?? 2026 }
+    private var seed: Int { seed(for: style) }
+
+    private var customColors: CustomTone.Colors {
+        let parts = customRaw.split(separator: ",").compactMap { UInt32($0, radix: 16) }
+        guard parts.count == 3 else { return CustomTone.standard }
+        return CustomTone.Colors(background: CustomTone.color(hex: parts[0]), ink: CustomTone.color(hex: parts[1]), accent: CustomTone.color(hex: parts[2]))
+    }
+    /// What a render depends on besides style and seed: the tone, and for Your Colors the colours too.
+    private var toneKey: String { tone == .custom ? "custom-\(customRaw)" : tone.rawValue }
 
     private var aspect: CGFloat {
         let size = NSScreen.main?.frame.size ?? CGSize(width: 16, height: 10)
@@ -56,7 +143,7 @@ struct WallpaperStudioView: View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Wallpapers").font(.largeTitle.bold())
-                    Text("Ray-traced studio renders: liquid chrome, real glass and satin under soft lights. Pick a style and tone, shuffle until it's perfect, then set it in 4K or sharper.")
+                    Text("Ray-traced studio renders, ink sketches, posters, glitch art and pixel art. Pick a style and a tone (or make your own colors), shuffle the one you're on until it's perfect, then set it in 4K or sharper.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -95,21 +182,24 @@ struct WallpaperStudioView: View {
                         .disabled(progress != nil)
                 }
 
-                Text("Style").font(.headline)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 12) {
-                    ForEach(StudioScene.allCases) { item in
-                        Button { sceneRaw = item.rawValue } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                SceneThumbnail(scene: item, tone: tone, seed: seed, aspect: aspect)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(item == scene ? Color.accentColor : Color.clear, lineWidth: 2.5))
-                                Text(item.label).font(.caption.weight(item == scene ? .semibold : .regular))
-                                Text(item.summary).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                                    .frame(height: 26, alignment: .topLeading)
+                ForEach(WallpaperStyle.Group.allCases) { group in
+                    Text(group.rawValue).font(.headline)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 12) {
+                        ForEach(WallpaperStyle.all.filter { $0.group == group }) { item in
+                            Button { sceneRaw = item.rawValue } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    SceneThumbnail(style: item, tone: tone, toneKey: toneKey, custom: customColors,
+                                                   seed: seed(for: item), aspect: aspect)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .strokeBorder(item == style ? Color.accentColor : Color.clear, lineWidth: 2.5))
+                                    Text(item.label).font(.caption.weight(item == style ? .semibold : .regular))
+                                    Text(item.summary).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                        .frame(height: 26, alignment: .topLeading)
+                                }
                             }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
 
@@ -130,26 +220,63 @@ struct WallpaperStudioView: View {
                     }
                 }
 
-                Text("Rendered on your Mac's graphics chip with reflections, refraction and soft studio lighting. Saved in Pictures › Home Widgets Wallpapers.")
+                if tone == .custom {
+                    HStack(spacing: 18) {
+                        colorWell("Background", 0)
+                        colorWell("Ink", 1)
+                        colorWell("Accent", 2)
+                        Spacer()
+                        Button("Start from Moss") { customRaw = Self.encode(CustomTone.moss) }
+                    }
+                    Text("Background fills the paper or studio backdrop, Ink draws lines and chrome, Accent tints glitches, gradients and seals.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                Text("Studio styles are ray traced on your Mac's graphics chip; sketches and pixel art are drawn stroke by stroke, so they stay crisp at any size. Tone sets the paper and ink too. Saved in Pictures › Home Widgets Wallpapers.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(24)
         }
-        .task(id: "\(sceneRaw)|\(toneRaw)|\(seed)") { await renderPreview() }
+        .task(id: "\(sceneRaw)|\(toneKey)|\(seed)") { await renderPreview() }
+        .onAppear { CustomTone.colors = customColors }
     }
 
+    private static func encode(_ colors: CustomTone.Colors) -> String {
+        [colors.background, colors.ink, colors.accent].map { String(format: "%06X", CustomTone.hex($0)) }.joined(separator: ",")
+    }
+
+    private func colorWell(_ title: String, _ index: Int) -> some View {
+        let binding = Binding<Color>(
+            get: {
+                let colors = customColors
+                let value = [colors.background, colors.ink, colors.accent][index]
+                return Color(hex: CustomTone.hex(value))
+            },
+            set: { color in
+                var parts = Self.encode(customColors).split(separator: ",").map(String.init)
+                parts[index] = color.hexString
+                customRaw = parts.joined(separator: ",")
+                CustomTone.colors = customColors
+            })
+        return ColorPicker(title, selection: binding, supportsOpacity: false)
+    }
+
+    /// New randomness for the selected style only.
     private func shuffle() {
-        seed = Int.random(in: 1...999_999)
+        var updated = seeds
+        updated[style.rawValue] = Int.random(in: 1...999_999)
+        seedsRaw = updated.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ";")
         status = nil
     }
 
     private func renderPreview() async {
         previewing = true
-        let (sc, t, s, a) = (scene, tone, seed, aspect)
+        CustomTone.colors = customColors
+        let (sc, t, s, a) = (style, tone, seed, aspect)
         let image = await Task.detached(priority: .userInitiated) { () -> CGImage? in
             let width = 1600
-            return StudioRenderer.render(sc, tone: t, seed: s, width: width, height: Int(CGFloat(width) / a), quality: .preview)
+            return sc.render(tone: t, seed: s, width: width, height: Int(CGFloat(width) / a), quality: .preview)
         }.value
         guard !Task.isCancelled else { return }
         if let image { preview = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height)) }
@@ -166,9 +293,10 @@ struct WallpaperStudioView: View {
 
     /// Renders off the main thread and writes a PNG.
     private func renderFile(width: Int, height: Int, to url: URL, share: Double, base: Double) async -> Bool {
-        let (sc, t, s) = (scene, tone, seed)
+        CustomTone.colors = customColors
+        let (sc, t, s) = (style, tone, seed)
         return await Task.detached(priority: .userInitiated) { () -> Bool in
-            let image = StudioRenderer.render(sc, tone: t, seed: s, width: width, height: height) { value in
+            let image = sc.render(tone: t, seed: s, width: width, height: height) { value in
                 DispatchQueue.main.async { if self.progress != nil { self.progress = base + value * share } }
             }
             guard let image, let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return false }
@@ -177,7 +305,7 @@ struct WallpaperStudioView: View {
     }
 
     private func fileName(_ width: Int, _ height: Int, suffix: String = "") -> String {
-        "\(scene.label) \(tone.label) \(seed) \(width)x\(height)\(suffix).png"
+        "\(style.label) \(tone.label) \(seed) \(width)x\(height)\(suffix).png"
     }
 
     private func setWallpaper() {
@@ -216,8 +344,10 @@ struct WallpaperStudioView: View {
 
 /// A small render of each style in the current tone and seed (cached).
 private struct SceneThumbnail: View {
-    let scene: StudioScene
+    let style: WallpaperStyle
     let tone: StudioTone
+    let toneKey: String
+    let custom: CustomTone.Colors
     let seed: Int
     let aspect: CGFloat
     @State private var image: NSImage?
@@ -234,12 +364,13 @@ private struct SceneThumbnail: View {
             }
         }
         .aspectRatio(aspect, contentMode: .fit)
-        .task(id: "\(scene.rawValue)|\(tone.rawValue)|\(seed)") {
-            let key = "\(scene.rawValue)|\(tone.rawValue)|\(seed)" as NSString
+        .task(id: "\(style.rawValue)|\(toneKey)|\(seed)") {
+            let key = "\(style.rawValue)|\(toneKey)|\(seed)" as NSString
             if let cached = Self.cache.object(forKey: key) { image = cached; return }
-            let (sc, t, s, a) = (scene, tone, seed, aspect)
+            CustomTone.colors = custom
+            let (sc, t, s, a) = (style, tone, seed, aspect)
             let rendered = await Task.detached(priority: .utility) { () -> CGImage? in
-                StudioRenderer.render(sc, tone: t, seed: s, width: 400, height: Int(400 / a), quality: .thumbnail)
+                sc.render(tone: t, seed: s, width: 400, height: Int(400 / a), quality: .thumbnail)
             }.value
             guard let rendered else { return }
             let ns = NSImage(cgImage: rendered, size: NSSize(width: rendered.width, height: rendered.height))

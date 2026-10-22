@@ -153,6 +153,8 @@ struct GeneralView: View {
                     .foregroundStyle(.secondary)
             }
 
+            GridPositionSection()
+
             Section("App") {
                 Toggle("Show icon in the Dock", isOn: $appearance.showInDock)
                 Toggle("Show icon in the menu bar", isOn: $appearance.showMenuBarIcon)
@@ -337,6 +339,52 @@ struct ThemePreview: View {
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.75)))
             .environment(\.colorScheme, .dark)
+        }
+    }
+}
+
+/// Slides the whole widget grid up or down (to keep the bottom row clear of the Dock) and
+/// optionally drops rows to make more room to move.
+private struct GridPositionSection: View {
+    @ObservedObject private var appearance = AppearanceSettings.shared
+
+    private var bounds: CGRect { DesktopGrid.area(of: NSScreen.main ?? NSScreen.screens.first) }
+    private var fit: Int {
+        let area = bounds.insetBy(dx: DesktopGrid.margin, dy: DesktopGrid.margin)
+        return max(1, Int((area.height + WidgetSize.spacing) / DesktopGrid.pitch))
+    }
+
+    var body: some View {
+        let rows = appearance.gridRows > 0 ? min(appearance.gridRows, fit) : fit
+        let slack = Double(DesktopGrid.slack(bounds: bounds, rows: rows))
+        Section {
+            HStack {
+                Text("Position")
+                Slider(value: Binding(get: { min(max(appearance.gridOffset, -slack), slack) },
+                                      set: { appearance.gridOffset = $0.rounded() }),
+                       in: -max(slack, 1)...max(slack, 1)) {
+                    Text("Position")
+                } minimumValueLabel: {
+                    Image(systemName: "arrow.down")
+                } maximumValueLabel: {
+                    Image(systemName: "arrow.up")
+                }
+                .labelsHidden()
+                .disabled(slack < 1)
+            }
+            Stepper(value: Binding(get: { rows }, set: { appearance.gridRows = $0 >= fit ? 0 : $0 }), in: 1...fit) {
+                Text("Rows: \(rows)\(rows == fit ? " (as many as fit)" : "")")
+            }
+            Button("Center Grid") { appearance.gridOffset = 0 }
+                .disabled(appearance.gridOffset == 0)
+        } header: {
+            Text("Grid")
+        } footer: {
+            Text(slack < 1
+                 ? "The grid already fills the screen. Use one row fewer to make room to move it."
+                 : "Drag to move every widget up or down together, for example to keep the bottom row clear of the Dock. Fewer rows leave more room to move.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

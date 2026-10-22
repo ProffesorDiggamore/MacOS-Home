@@ -219,7 +219,7 @@ extension WidgetChrome {
     /// are hard to find and grab, so they get an edge hint on hover and while dragging.
     func isSeeThrough(_ custom: CustomBackground?) -> Bool {
         if !backgroundImagePath.isEmpty { return false }
-        if custom == .edgeToEdge { return model.kind == .sticker }
+        if custom == .edgeToEdge { return model.kind == .sticker || model.kind == .breathe }
         if custom != nil { return false }
         return style == .clear || appearance.backgroundOpacity < 0.3
     }

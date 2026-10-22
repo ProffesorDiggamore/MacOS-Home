@@ -13,17 +13,41 @@ struct DesktopGrid {
     let bounds: CGRect // the screen's visible frame (AppKit coordinates, y up)
     let columns: Int
     let rows: Int
+    /// How far the grid is moved up (positive) or down from the middle, already limited to the screen.
+    let shift: CGFloat
+
+    /// Settings › General › Grid: move every widget up or down together (to clear the Dock),
+    /// and optionally use fewer rows than fit. Set by `AppController` on the main thread.
+    static var verticalOffset: CGFloat = 0
+    static var rowLimit = 0
 
     init(bounds: CGRect) {
         self.bounds = bounds
         let area = bounds.insetBy(dx: Self.margin, dy: Self.margin)
         columns = max(1, Int((area.width + WidgetSize.spacing) / Self.pitch))
-        rows = max(1, Int((area.height + WidgetSize.spacing) / Self.pitch))
+        let fit = max(1, Int((area.height + WidgetSize.spacing) / Self.pitch))
+        rows = Self.rowLimit > 0 ? min(fit, Self.rowLimit) : fit
+        let slack = Self.slack(bounds: bounds, rows: rows)
+        shift = min(max(Self.verticalOffset, -slack), slack)
     }
 
-    private var originX: CGFloat { bounds.minX + Self.margin }
+    /// Spare height above and below a centred grid: how far it can move each way.
+    static func slack(bounds: CGRect, rows: Int) -> CGFloat {
+        let used = CGFloat(rows) * pitch - WidgetSize.spacing
+        return max(0, ((bounds.height - used) / 2).rounded(.down))
+    }
 
-    private var topY: CGFloat { bounds.maxY - Self.margin }
+    /// Space left over after whole cells is split evenly on both sides, so a full
+    /// desktop sits in the middle of the screen instead of hugging the top-left.
+    private var originX: CGFloat {
+        let used = CGFloat(columns) * Self.pitch - WidgetSize.spacing
+        return bounds.minX + ((bounds.width - used) / 2).rounded()
+    }
+
+    private var topY: CGFloat {
+        let used = CGFloat(rows) * Self.pitch - WidgetSize.spacing
+        return bounds.maxY - ((bounds.height - used) / 2).rounded() + shift.rounded()
+    }
 
     struct Cell: Hashable {
         var column: Int
@@ -102,9 +126,10 @@ struct DesktopGrid {
         DesktopGrid(bounds: area(of: screen(containing: rect) ?? NSScreen.main ?? NSScreen.screens.first))
     }
 
-    /// Where a widget of `size` near `rect` should go, avoiding `occupied`.
-    /// Falls back to the main screen, then to staying put, so nothing ever disappears.
-    static func place(_ rect: CGRect, size: WidgetSize, occupied: [CGRect]) -> CGRect {
+    /// Where a widget of `size` near `rect` should go, avoiding `occupied`: the nearest
+    /// free slot on its screen, then any free slot on another screen. Nil when every
+    /// screen is full, so callers never drop a widget on top of another one.
+    static func place(_ rect: CGRect, size: WidgetSize, occupied: [CGRect]) -> CGRect? {
         let grid = forRect(rect)
         if let cell = grid.nearestFree(to: grid.nearestCell(to: rect, size: size), size: size, occupied: occupied) {
             return grid.rect(at: cell, size: size)
@@ -113,7 +138,7 @@ struct DesktopGrid {
             let other = DesktopGrid(bounds: area(of: screen))
             if let cell = other.firstFree(size: size, occupied: occupied) { return other.rect(at: cell, size: size) }
         }
-        return rect
+        return nil
     }
 }
 

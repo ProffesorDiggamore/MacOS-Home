@@ -186,7 +186,7 @@ final class RepoStatsService: ObservableObject {
     }
 
     func refresh(_ rawRepo: String, force: Bool = false) {
-        let repo = CairnService.normalize(rawRepo)
+        let repo = SlateService.normalize(rawRepo)
         guard repo.contains("/") else { return }
         if !force, let last = lastFetch[repo], Date().timeIntervalSince(last) < 600 { return }
         lastFetch[repo] = Date()
@@ -226,7 +226,7 @@ struct GitHubRepoWidget: View {
     @Environment(\.widgetContext) private var context
     @Environment(\.widgetStyle) private var style
 
-    private var repo: String { CairnService.normalize(model[RepoKeys.repo]) }
+    private var repo: String { SlateService.normalize(model[RepoKeys.repo]) }
 
     var body: some View {
         let stats = context == .gallery
@@ -470,28 +470,38 @@ struct BreatheWidget: View {
             let running = started != nil || context == .gallery
             let t = running ? date.timeIntervalSince(started ?? Date(timeIntervalSinceReferenceDate: 0)).truncatingRemainder(dividingBy: cycle) : 0
             let (label, scale) = Self.state(t: t, steps: steps, running: running)
-            ZStack {
-                ForEach(0..<6) { index in
-                    Circle()
-                        .fill(LinearGradient(colors: [Color(hex: 0x6EE7F9).opacity(0.55), Color(hex: 0x8B5CF6).opacity(0.45)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 46, height: 46)
-                        .offset(x: 18 * scale)
-                        .rotationEffect(.degrees(Double(index) * 60 + t * 6))
-                        .blendMode(.plusLighter)
+            GeometryReader { proxy in
+                // The flower grows with the widget so it fills medium and large sizes too.
+                let side: CGFloat = min(proxy.size.width, proxy.size.height)
+                let petal: CGFloat = side * 0.32
+                let reach: CGFloat = side * 0.125
+                ZStack {
+                    ForEach(0..<6) { index in
+                        Circle()
+                            .fill(LinearGradient(colors: [Color(hex: 0x6EE7F9).opacity(0.55), Color(hex: 0x8B5CF6).opacity(0.45)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: petal, height: petal)
+                            .offset(x: reach * scale)
+                            .rotationEffect(.degrees(Double(index) * 60 + t * 6))
+                            .blendMode(.plusLighter)
+                    }
+                    .scaleEffect(0.55 + 0.6 * scale)
                 }
-                .scaleEffect(0.55 + 0.6 * scale)
-                VStack {
-                    Spacer()
-                    Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .overlay(alignment: .bottom) {
+                    Text(label)
+                        .font(.system(size: model.family == .large ? 15 : 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .contentShape(Rectangle())
         .onTapGesture { started = started == nil ? Date() : nil }
         .widgetPadding(10)
-        .widgetBackground(.gradient(Color(hex: 0x111827), Color(hex: 0x1E1B4B)))
+        // No box: just the flower floating on the wallpaper, like a sticker.
+        .widgetBackground(.edgeToEdge)
         .environment(\.colorScheme, .dark)
         .help("Click to start or stop")
     }

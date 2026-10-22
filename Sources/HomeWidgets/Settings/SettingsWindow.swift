@@ -185,9 +185,7 @@ struct GalleryCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: kind.symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white)
+                KindGlyph(kind: kind, size: 14)
                     .frame(width: 26, height: 26)
                     .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(kind.tint.gradient))
                 VStack(alignment: .leading, spacing: 2) {
@@ -209,7 +207,7 @@ struct GalleryCard: View {
                 }
                 Spacer()
                 Button {
-                    AppController.shared.addWidget(kind, size: size)
+                    guard AppController.shared.addWidget(kind, size: size) != nil else { return }
                     justAdded = true
                     Task {
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -272,9 +270,7 @@ private struct WidgetListRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: model.kind.symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white)
+            KindGlyph(kind: model.kind, size: 12)
                 .frame(width: 24, height: 24)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(model.kind.tint.gradient))
             VStack(alignment: .leading, spacing: 1) {

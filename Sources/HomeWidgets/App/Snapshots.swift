@@ -26,6 +26,36 @@ enum Snapshots {
         exit(0)
     }
 
+    /// `HomeWidgets -HWWallpapers <folder>` renders every wallpaper style (or those in
+    /// `-HWWallpaperStyles a,b`) in every tone (or `-HWWallpaperTones`) at `-HWWallpaperWidth`
+    /// (default 1600), with `-HWWallpaperSeed`, then quits. Prints how long each one took.
+    static func wallpapers(to folder: String) {
+        NSApp.setActivationPolicy(.prohibited)
+        let defaults = UserDefaults.standard
+        let out = URL(fileURLWithPath: (folder as NSString).expandingTildeInPath, isDirectory: true)
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let styles = defaults.string(forKey: "HWWallpaperStyles")?.components(separatedBy: ",").compactMap(WallpaperStyle.init(rawValue:))
+            ?? WallpaperStyle.all
+        let tones = defaults.string(forKey: "HWWallpaperTones")?.components(separatedBy: ",").compactMap(StudioTone.init(rawValue:))
+            ?? StudioTone.allCases
+        let width = defaults.integer(forKey: "HWWallpaperWidth") > 0 ? defaults.integer(forKey: "HWWallpaperWidth") : 1600
+        let height = width * 1964 / 3024
+        let seed = defaults.integer(forKey: "HWWallpaperSeed") != 0 ? defaults.integer(forKey: "HWWallpaperSeed") : 2026
+        for style in styles {
+            for tone in tones {
+                let start = Date()
+                guard let image = style.render(tone: tone, seed: seed, width: width, height: height, quality: .preview),
+                      let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+                    print("✗ \(style.rawValue) \(tone.rawValue)")
+                    continue
+                }
+                try? data.write(to: out.appendingPathComponent("\(style.rawValue)-\(tone.rawValue)-\(seed).png"))
+                print(String(format: "✓ %@ %@ %.2fs", style.rawValue, tone.rawValue, Date().timeIntervalSince(start)))
+            }
+        }
+        exit(0)
+    }
+
     private static func render(_ kind: WidgetKind, _ size: WidgetSize) -> (WidgetSize, CGImage)? {
         let model = PreviewModels.shared.model(for: kind, size: size)
         model.styleOverride = .solid // glass materials can't be drawn off screen
