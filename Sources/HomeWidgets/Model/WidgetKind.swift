@@ -112,6 +112,8 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
     case dotClock, devServers, gitStatus, devTools, onThisDay, deviceBatteries
     // Version 5
     case slateToday, slateStreak, ciRuns
+    // Version 6
+    case claudeBudget
 
     var id: String { rawValue }
 
@@ -331,6 +333,8 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
             return .init(title: "Slate Streak", summary: "Your daily-note streak and a year of the days you wrote.", symbol: "square.stack.3d.up.fill", tint: Slate.stone, category: .web, sizes: [.small, .medium, .wide, .large], defaultSize: .medium)
         case .ciRuns:
             return .init(title: "GitHub Actions", summary: "The latest CI run for each of your repos: passing, failing or running.", symbol: "checkmark.seal.fill", tint: .green, category: .web, sizes: [.small, .medium, .large, .tall], defaultSize: .medium)
+        case .claudeBudget:
+            return .init(title: "Claude Sessions", summary: "Click it each time you start a 5-hour Claude Code window. Spreads your week into a daily share.", symbol: "gauge.with.needle.fill", tint: Palette.claude, category: .productivity, sizes: smallMedium, defaultSize: .medium)
         }
     }
 

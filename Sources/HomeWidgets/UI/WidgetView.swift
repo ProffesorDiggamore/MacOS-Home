@@ -126,6 +126,7 @@ struct WidgetView: View {
         case .links: LinksWidget(model: model)
         case .calculator: CalculatorWidget(model: model)
         case .counter: CounterWidget(model: model)
+        case .claudeBudget: SessionBudgetWidget(model: model)
         default: v3Widget
         }
     }

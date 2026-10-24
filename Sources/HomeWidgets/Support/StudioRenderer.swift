@@ -6,6 +6,7 @@ import simd
 /// What the wallpaper shows. The first four are surfaces seen from above; the rest are 3D objects.
 enum StudioScene: String, CaseIterable, Identifiable {
     case liquidChrome, chromeVeins, satin, clay, glassRibbon, liquidMetal, darkGlass, glassPills
+    case glassWave, twinRibbon, glassKnot, glassRings, frostedRibbon
 
     var id: String { rawValue }
     var label: String {
@@ -18,6 +19,11 @@ enum StudioScene: String, CaseIterable, Identifiable {
         case .liquidMetal: return "Liquid Metal"
         case .darkGlass: return "Glass Sculpture"
         case .glassPills: return "Glass Pills"
+        case .glassWave: return "Glass Wave"
+        case .twinRibbon: return "Twin Ribbons"
+        case .glassKnot: return "Glass Knot"
+        case .glassRings: return "Glass Rings"
+        case .frostedRibbon: return "Frosted Ribbon"
         }
     }
     var summary: String {
@@ -30,11 +36,16 @@ enum StudioScene: String, CaseIterable, Identifiable {
         case .liquidMetal: return "Melted chrome forms reflecting each other"
         case .darkGlass: return "Thick flowing glass that bends the light"
         case .glassPills: return "Rows of smoked glass capsules"
+        case .glassWave: return "A wide sheet of glass rolling across the frame"
+        case .twinRibbon: return "Two glass bands braided around each other"
+        case .glassKnot: return "A looping glass tube tied in a knot"
+        case .glassRings: return "Three linked rings of clear glass"
+        case .frostedRibbon: return "The glass ribbon in soft, sandblasted glass"
         }
     }
     fileprivate var index: UInt32 { UInt32(Self.allCases.firstIndex(of: self) ?? 0) }
     fileprivate var isFlat: Bool { index < 4 }
-    fileprivate var isGlass: Bool { self == .glassRibbon || self == .darkGlass || self == .glassPills }
+    fileprivate var isGlass: Bool { !isFlat && self != .liquidMetal }
 }
 
 /// The studio's colours: backdrop, lights and materials. Moss and Your Colors are built from three colours.
@@ -208,10 +219,22 @@ enum StudioRenderer {
         var offset = SIMD3<Float>(0, 0, 0)
         var distance: Float = 4.6
         switch scene {
-        case .glassRibbon:
+        case .glassRibbon, .twinRibbon, .frostedRibbon:
             angles = SIMD3(0.5 + r() * 0.8, r() * 6.283, (r() - 0.5) * 1.0)
             offset = SIMD3((r() - 0.5) * 1.2, (r() - 0.5) * 0.6, 0)
             distance = 4.4
+        case .glassWave:
+            // Kept nearly side-on so the sheet runs across the screen rather than at the camera.
+            angles = SIMD3((r() - 0.5) * 0.5, (r() - 0.5) * 0.6, (r() - 0.5) * 0.6)
+            offset = SIMD3(0, (r() - 0.5) * 0.4, 0)
+            distance = 4.6
+        case .glassKnot:
+            angles = SIMD3(0.4 + r() * 0.9, r() * 6.283, (r() - 0.5) * 0.8)
+            offset = SIMD3((r() - 0.5) * 0.6, (r() - 0.5) * 0.3, 0)
+            distance = 5.0
+        case .glassRings:
+            angles = SIMD3(r() * 6.283, (r() - 0.5) * 1.2, (r() - 0.5) * 0.8)
+            distance = 4.6
         case .glassPills:
             angles = SIMD3((r() - 0.5) * 0.3, (r() - 0.5) * 0.6, (r() - 0.5) * 0.7)
             distance = 4.2

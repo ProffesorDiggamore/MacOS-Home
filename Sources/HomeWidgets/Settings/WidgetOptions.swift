@@ -283,6 +283,19 @@ struct MoreWidgetOptions: View {
                 Toggle("Reset every day", isOn: model.binding(CounterKeys.resetsDaily))
                 Button("Reset to 0") { model.config[CounterKeys.count] = 0 }
             }
+        case .claudeBudget:
+            Section("Claude Sessions") {
+                Stepper("Sessions per week: \(model[SessionBudgetKeys.perWeek])", value: model.binding(SessionBudgetKeys.perWeek), in: 1...70)
+                Picker("Week starts on", selection: model.binding(SessionBudgetKeys.resetDay)) {
+                    ForEach(1...7, id: \.self) { day in
+                        Text(Calendar.current.weekdaySymbols[day - 1]).tag(day)
+                    }
+                }
+                Text("Each click logs one 5-hour Claude Code window. Start the week on the day your weekly limit resets.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Clear This Week", role: .destructive) { model.config[SessionBudgetKeys.log] = [] }
+            }
         case .sticker:
             Section("Sticker") {
                 ImagePickerRow(title: "Image", path: model.binding(StickerKeys.image))

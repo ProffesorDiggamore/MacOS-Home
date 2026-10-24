@@ -3,9 +3,10 @@
 /// Two kinds of scene share one studio light rig:
 /// - surfaces seen from straight above (liquid chrome, veins, satin, clay terraces),
 ///   shaded from a height field's normal, and
-/// - real 3D objects (glass ribbon, liquid metal, dark glass, glass pills), ray marched
-///   against signed distance fields with mirror bounces and refraction. Glass splits
-///   red, green and blue across samples for natural dispersion.
+/// - real 3D objects (glass ribbon, liquid metal, dark glass, glass pills, glass wave,
+///   twin ribbons, glass knot, glass rings, frosted ribbon), ray marched against signed
+///   distance fields with mirror bounces and refraction. Glass splits red, green and
+///   blue across samples for natural dispersion.
 enum StudioShader {
     static let source = #"""
 #include <metal_stdlib>
@@ -234,6 +235,68 @@ float sdRibbon(float3 p, thread const Scene& S) {
     return (length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - 0.04) * 0.55;
 }
 
+// A wide, thin sheet of glass rolling across the frame, turning over as it goes.
+float sdWave(float3 p, thread const Scene& S) {
+    float y = 0.5 * sin(0.8 * p.x + S.P->seed.x * 6.2831) + 0.2 * sin(1.9 * p.x + S.P->seed.y * 6.2831);
+    float z = 0.5 * sin(0.6 * p.x + S.P->seed.z * 6.2831);
+    float2 q = float2(p.y - y, p.z - z);
+    float tw = (0.5 + 0.5 * S.P->seed2.x) * p.x + S.P->seed.w * 6.2831;
+    float c = cos(tw);
+    float s = sin(tw);
+    q = float2(c * q.x - s * q.y, s * q.x + c * q.y);
+    float2 d = abs(q) - float2(0.05, 0.55);
+    return (length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - 0.035) * 0.45;
+}
+
+// Two narrow bands braided around one looping path, always on opposite sides so they never touch.
+float sdTwin(float3 p, thread const Scene& S) {
+    float a = atan2(p.z, p.x);
+    float radius = 1.5 + 0.3 * sin(2.0 * a + S.P->seed.x * 6.2831);
+    float2 q = float2(length(p.xz) - radius, p.y - 0.3 * sin(3.0 * a + S.P->seed.y * 6.2831));
+    float d = 1e9;
+    for (int i = 0; i < 2; i++) {
+        // A whole number of turns per loop keeps the braid seamless where atan2 wraps.
+        float w = 3.0 * a + S.P->seed.z * 6.2831 + 3.1416 * float(i);
+        float c = cos(w);
+        float s = sin(w);
+        float2 r = q - 0.42 * float2(c, s);
+        r = float2(c * r.x + s * r.y, -s * r.x + c * r.y);
+        float2 e = abs(r) - float2(0.05, 0.3);
+        d = min(d, length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - 0.03);
+    }
+    return d * 0.4;
+}
+
+// A glass tube tied as a torus knot: a trefoil, or a five-lobed knot.
+float sdKnot(float3 p, thread const Scene& S) {
+    float a = atan2(p.z, p.x);
+    float2 q = float2(length(p.xz) - 1.25, p.y);
+    float n = S.P->seed2.x < 1.2 ? 1.5 : 2.5;
+    float d = 1e9;
+    for (int i = 0; i < 2; i++) {
+        float w = n * (a + 6.2831 * float(i)) + S.P->seed.x * 6.2831;
+        d = min(d, length(q - 0.5 * float2(cos(w), sin(w))) - 0.26);
+    }
+    return d * 0.5;
+}
+
+float sdTorus(float3 q, float tube) { return length(float2(length(q.xz) - 0.95, q.y)) - tube; }
+
+// Three linked rings: the middle one stands upright through the two tilted end rings.
+float sdRings(float3 p, thread const Scene& S) {
+    float tube = 0.17 + 0.1 * S.P->seed.y;
+    float d = sdTorus(p.xzy, tube);
+    for (int i = 0; i < 2; i++) {
+        float3 q = p - float3(i == 0 ? -1.05 : 1.05, 0.0, 0.0);
+        float t = ((i == 0 ? S.P->seed.z : S.P->seed.w) - 0.5) * 1.0;
+        float c = cos(t);
+        float s = sin(t);
+        q.yz = float2(c * q.y - s * q.z, s * q.y + c * q.z);
+        d = min(d, sdTorus(q, tube));
+    }
+    return d;
+}
+
 float sdBlobs(float3 p, thread const Scene& S) {
     p += 0.28 * sin(p.yzx * 1.3 + S.P->seed.xyz * 6.2831);
     float d = 1e9;
@@ -267,8 +330,12 @@ float sdPills(float3 p, thread const Scene& S) {
 float map(float3 p, thread const Scene& S) {
     float3 q = toObject(p, S);
     uint scene = S.P->scene;
-    if (scene == 4) return sdRibbon(q, S);
+    if (scene == 4 || scene == 12) return sdRibbon(q, S);
     if (scene == 7) return sdPills(q, S);
+    if (scene == 8) return sdWave(q, S);
+    if (scene == 9) return sdTwin(q, S);
+    if (scene == 10) return sdKnot(q, S);
+    if (scene == 11) return sdRings(q, S);
     return sdBlobs(q, S);
 }
 
@@ -293,6 +360,9 @@ bool march(float3 ro, float3 rd, float side, thread float& t, thread const Scene
 float3 trace(float3 ro, float3 rd, float ior, thread const Scene& S) {
     uint scene = S.P->scene;
     bool glass = scene != 5;
+    // Frosted glass scatters light: blurry reflections, a milky surface, a soft view through.
+    float frost = scene == 12 ? 0.45 : 0.0;
+    bool passed = false;
     float3 col = float3(0.0);
     float3 through = float3(1.0);
     bool inside = false;
@@ -301,7 +371,7 @@ float3 trace(float3 ro, float3 rd, float ior, thread const Scene& S) {
         float t;
         bool hit = march(ro, rd, inside ? -1.0 : 1.0, t, S);
         if (!hit) {
-            col += through * env(rd, 0.0, S);
+            col += through * env(rd, passed ? frost : 0.0, S);
             return col;
         }
         float3 p = ro + rd * t;
@@ -316,8 +386,12 @@ float3 trace(float3 ro, float3 rd, float ior, thread const Scene& S) {
         if (!inside) {
             float c = clamp(-dot(rd, n), 0.0, 1.0);
             float fr = 0.04 + 0.96 * pow(1.0 - c, 5.0);
-            col += through * fr * env(reflect(rd, n), 0.03, S) * film(c, S);
+            col += through * fr * env(reflect(rd, n), 0.03 + frost * 0.5, S) * film(c, S);
             through *= (1.0 - fr);
+            if (frost > 0.0) {
+                col += through * frost * env(n, 0.9, S);
+                through *= 1.0 - frost;
+            }
             rd = refract(rd, n, 1.0 / ior);
             ro = p - n * 0.004;
             inside = true;
@@ -331,10 +405,12 @@ float3 trace(float3 ro, float3 rd, float ior, thread const Scene& S) {
             } else if (dot(exitDir, exitDir) < 1e-4) {
                 ro = p + n * 0.004;
                 inside = false;
+                passed = true;
             } else {
                 rd = exitDir;
                 ro = p + n * 0.004;
                 inside = false;
+                passed = true;
             }
         }
     }
@@ -360,7 +436,7 @@ kernel void studio(device uint* out [[buffer(0)]],
     float h = float(P.height);
     float aspect = w / h;
     bool isFlat = P.scene < 4;
-    bool glass = P.scene == 4 || P.scene == 6 || P.scene == 7;
+    bool glass = P.scene >= 4 && P.scene != 5;
     uint samples = max(P.samples, 1u);
     float3 sum = float3(0.0);
     float3 weight = float3(0.0);
