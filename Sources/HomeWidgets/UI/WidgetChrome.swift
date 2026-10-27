@@ -11,8 +11,57 @@ enum WidgetContext {
     case desktop, gallery, editor
 }
 
+/// What widgets read as `@Environment(\.widgetStyle)`: the background style plus
+/// the colour scheme. `tone(_:)` turns a widget's own colour into the chosen one,
+/// so every graph, ring and icon follows the setting without per-widget code.
+struct WidgetLook: Equatable {
+    var style: WidgetStyle
+    var mode: WidgetColorMode = .theme
+    var single: Color = .green
+    var theme: [Color] = ThemePreset.standard.map { Color(hexString: $0) ?? .gray }
+
+    static func == (lhs: WidgetLook, rhs: WidgetStyle) -> Bool { lhs.style == rhs }
+    static func != (lhs: WidgetLook, rhs: WidgetStyle) -> Bool { lhs.style != rhs }
+
+    func tone(_ color: Color) -> Color {
+        if style == .tinted { return .white }
+        switch mode {
+        case .original: return color
+        case .single: return Self.slot(of: color) == nil ? color : single
+        case .theme:
+            guard let slot = Self.slot(of: color), slot.rawValue < theme.count else { return color }
+            return theme[slot.rawValue]
+        }
+    }
+
+    private static var slots: [Color: ThemeSlot?] = [:]
+
+    /// Which theme family a colour belongs to; nil for greys and white (text, tracks).
+    static func slot(of color: Color) -> ThemeSlot? {
+        if let known = slots[color] { return known }
+        var result: ThemeSlot?
+        if let rgb = NSColor(color).usingColorSpace(.sRGB), rgb.saturationComponent > 0.18 {
+            result = ThemeSlot.slot(hue: Double(rgb.hueComponent) * 360)
+        }
+        slots[color] = result
+        return result
+    }
+}
+
+extension Color {
+    init?(hexString: String) {
+        guard hexString.count == 6, let value = UInt32(hexString, radix: 16) else { return nil }
+        self.init(hex: value)
+    }
+
+    var hexString: String {
+        guard let rgb = NSColor(self).usingColorSpace(.sRGB) else { return "34C759" }
+        return String(format: "%02X%02X%02X", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255))
+    }
+}
+
 private struct WidgetStyleKey: EnvironmentKey {
-    static let defaultValue: WidgetStyle = .glass
+    static let defaultValue = WidgetLook(style: .glass)
 }
 
 private struct WidgetContextKey: EnvironmentKey {
@@ -23,8 +72,12 @@ private struct WidgetAccentKey: EnvironmentKey {
     static let defaultValue: Color = .accentColor
 }
 
+private struct WidgetIsVisibleKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 extension EnvironmentValues {
-    var widgetStyle: WidgetStyle {
+    var widgetStyle: WidgetLook {
         get { self[WidgetStyleKey.self] }
         set { self[WidgetStyleKey.self] = newValue }
     }
@@ -37,6 +90,12 @@ extension EnvironmentValues {
     var widgetAccent: Color {
         get { self[WidgetAccentKey.self] }
         set { self[WidgetAccentKey.self] = newValue }
+    }
+
+    /// False while the widget is covered or hidden; animated widgets pause.
+    var widgetIsVisible: Bool {
+        get { self[WidgetIsVisibleKey.self] }
+        set { self[WidgetIsVisibleKey.self] = newValue }
     }
 }
 
@@ -80,8 +139,30 @@ struct WidgetChrome<Content: View>: View {
         return WidgetStyle.available.contains(chosen) ? chosen : .glass
     }
 
+    private var backgroundImagePath: String { model[BackgroundKeys.image] }
+
+    /// This widget's colour choice, falling back to the one for all widgets.
+    private var look: WidgetLook {
+        let colors: (String) -> Color = { Color(hexString: $0) ?? .gray }
+        var look = WidgetLook(style: style, mode: appearance.colorMode,
+                              single: colors(appearance.singleColor), theme: appearance.themeColors.map(colors))
+        switch WidgetColorChoice(rawValue: model[ColorKeys.mode]) ?? .same {
+        case .same: break
+        case .theme: look.mode = .theme
+        case .custom:
+            look.mode = .theme
+            let own = model[ColorKeys.theme]
+            if own.count == ThemeSlot.allCases.count { look.theme = own.map(colors) }
+        case .single:
+            look.mode = .single
+            if !model[ColorKeys.single].isEmpty { look.single = colors(model[ColorKeys.single]) }
+        case .original: look.mode = .original
+        }
+        return look
+    }
+
     private var scheme: ColorScheme {
-        if style == .tinted { return .dark }
+        if style == .tinted || !backgroundImagePath.isEmpty { return .dark }
         switch appearance.scheme {
         case .light: return .light
         case .dark: return .dark
@@ -95,22 +176,34 @@ struct WidgetChrome<Content: View>: View {
         content
             .frame(width: size.width, height: size.height)
             .backgroundPreferenceValue(CustomBackgroundKey.self) { custom in
-                WidgetBackground(style: style,
-                                 custom: custom,
-                                 dark: scheme == .dark,
-                                 opacity: appearance.backgroundOpacity,
-                                 accent: appearance.accentColor,
-                                 withinWindow: context != .desktop)
+                if backgroundImagePath.isEmpty || custom == .edgeToEdge {
+                    WidgetBackground(style: style,
+                                     custom: custom,
+                                     dark: scheme == .dark,
+                                     opacity: appearance.backgroundOpacity,
+                                     accent: appearance.accentColor,
+                                     withinWindow: context != .desktop)
+                } else {
+                    ImageBackground(path: backgroundImagePath,
+                                    dim: model[BackgroundKeys.dim],
+                                    blur: model[BackgroundKeys.blur],
+                                    size: size)
+                }
             }
             .clipShape(shape)
-            .overlay {
-                if style == .glass || style == .liquidGlass {
+            .overlayPreferenceValue(CustomBackgroundKey.self) { custom in
+                if (style == .glass || style == .liquidGlass) && custom != .edgeToEdge && backgroundImagePath.isEmpty {
                     shape.strokeBorder(Color.white.opacity(scheme == .dark ? 0.10 : 0.45), lineWidth: 0.5)
+                }
+            }
+            .overlayPreferenceValue(CustomBackgroundKey.self) { custom in
+                if context == .desktop {
+                    EdgeHint(runtime: model.runtime, seeThrough: isSeeThrough(custom))
                 }
             }
             .shadow(color: style == .clear ? .black.opacity(0.45) : .clear, radius: 3, y: 1)
             .environment(\.colorScheme, scheme)
-            .environment(\.widgetStyle, style)
+            .environment(\.widgetStyle, look)
             .environment(\.widgetAccent, appearance.accentColor)
             .fontDesign(appearance.font.design)
             .contextMenu {
@@ -118,6 +211,51 @@ struct WidgetChrome<Content: View>: View {
                     WidgetContextMenu(model: model)
                 }
             }
+    }
+}
+
+extension WidgetChrome {
+    /// Widgets with nothing behind their content (Clear style, stickers, faint backgrounds)
+    /// are hard to find and grab, so they get an edge hint on hover and while dragging.
+    func isSeeThrough(_ custom: CustomBackground?) -> Bool {
+        if !backgroundImagePath.isEmpty { return false }
+        if custom == .edgeToEdge { return model.kind == .sticker || model.kind == .breathe }
+        if custom != nil { return false }
+        return style == .clear || appearance.backgroundOpacity < 0.3
+    }
+}
+
+/// A soft outline with a slowly travelling highlight: appears while the pointer is over a
+/// see-through widget or any widget is being dragged, then fades away again.
+struct EdgeHint: View {
+    @ObservedObject var runtime: WidgetRuntime
+    @ObservedObject private var drag = DragState.shared
+    let seeThrough: Bool
+
+    var body: some View {
+        let strong = runtime.isHovered || runtime.isDragging
+        let show = seeThrough && (strong || drag.isDragging)
+        let shape = RoundedRectangle(cornerRadius: Layout.cornerRadius, style: .continuous)
+        ZStack {
+            if show {
+                TimelineView(.animation(minimumInterval: 1 / 30, paused: !strong)) { timeline in
+                    let angle = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 6) / 6 * 360
+                    ZStack {
+                        shape.fill(Color.white.opacity(strong ? 0.07 : 0.035))
+                        shape.strokeBorder(Color.white.opacity(strong ? 0.28 : 0.18), lineWidth: 1)
+                        shape.strokeBorder(
+                            AngularGradient(colors: [.white.opacity(0.95), .white.opacity(0), .cyan.opacity(0.55), .white.opacity(0), .white.opacity(0.95)],
+                                            center: .center,
+                                            angle: .degrees(angle)),
+                            lineWidth: strong ? 2 : 1.2)
+                            .opacity(strong ? 1 : 0.5)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.22), value: show)
+        .allowsHitTesting(false)
     }
 }
 
@@ -140,6 +278,9 @@ struct WidgetContextMenu: View {
             ForEach(WidgetStyle.available) { style in
                 Text(style.label).tag(WidgetStyle?.some(style))
             }
+        }
+        Picker("Colors", selection: model.binding(ColorKeys.mode)) {
+            ForEach(WidgetColorChoice.allCases) { Text($0.label).tag($0.rawValue) }
         }
         Divider()
         Button("Remove Widget") {
@@ -191,6 +332,30 @@ struct WidgetBackground: View {
             case .clear:
                 Color.clear
             }
+        }
+    }
+}
+
+/// A photo you chose as the widget's background, dimmed so text stays readable.
+struct ImageBackground: View {
+    let path: String
+    let dim: Double
+    let blur: Double
+    let size: CGSize
+
+    var body: some View {
+        ZStack {
+            if let image = ImageStore.image(at: path, maxPixel: Int(max(size.width, size.height) * 2)) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height)
+                    .blur(radius: blur, opaque: true)
+                    .clipped()
+            } else {
+                Color.gray
+            }
+            Color.black.opacity(dim)
         }
     }
 }

@@ -8,22 +8,32 @@ import ServiceManagement
 final class AppController: NSObject, NSMenuDelegate {
     static let shared = AppController()
 
-    private let store = WidgetStore.shared
+    let store = WidgetStore.shared
     private let appearance = AppearanceSettings.shared
-    private var panels: [UUID: WidgetPanelController] = [:]
+    private(set) var panels: [UUID: WidgetPanelController] = [:]
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: Startup
 
-    func start() {
+    func start(showWindow: Bool) {
         let hadSavedWidgets = store.load()
         if !hadSavedWidgets {
             installDefaultWidgets()
         }
-        setupStatusItem()
+        applyAppPresence()
+        DesktopGrid.verticalOffset = CGFloat(appearance.gridOffset)
+        DesktopGrid.rowLimit = appearance.gridRows
+        tidyOntoGrid()
         syncPanels(store.widgets)
+
+        // Moving the grid (Settings › General › Grid) slides every widget along with it.
+        appearance.$gridOffset.combineLatest(appearance.$gridRows)
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] offset, rows in self?.moveGrid(offset: CGFloat(offset), rows: rows) }
+            .store(in: &cancellables)
 
         store.$widgets
             .dropFirst()
@@ -33,7 +43,10 @@ final class AppController: NSObject, NSMenuDelegate {
 
         appearance.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.applyWindowSettings() }
+            .sink { [weak self] _ in
+                self?.applyWindowSettings()
+                self?.applyAppPresence()
+            }
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
@@ -41,8 +54,31 @@ final class AppController: NSObject, NSMenuDelegate {
             .sink { [weak self] _ in self?.screensChanged() }
             .store(in: &cancellables)
 
-        if !hadSavedWidgets {
-            showSettings(pane: .gallery)
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.panels.values.forEach { $0.spaceChanged() } }
+            .store(in: &cancellables)
+
+        if showWindow || !hadSavedWidgets {
+            showSettings(pane: hadSavedWidgets ? nil : .gallery)
+        }
+    }
+
+    /// Dock icon and menu bar icon, based on settings. At least one way back into the app stays available:
+    /// opening the app from Finder or Spotlight always shows the window.
+    private func applyAppPresence() {
+        let policy: NSApplication.ActivationPolicy = appearance.showInDock ? .regular : .accessory
+        if NSApp.activationPolicy() != policy {
+            NSApp.setActivationPolicy(policy)
+            if policy == .regular, settingsWindow?.isVisible == true {
+                NSApp.activate()
+            }
+        }
+        if appearance.showMenuBarIcon {
+            if statusItem == nil { setupStatusItem() }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
         }
     }
 
@@ -63,14 +99,32 @@ final class AppController: NSObject, NSMenuDelegate {
 
     // MARK: Widgets
 
+    /// Adds a widget in the first free slot. If the chosen size doesn't fit anywhere it
+    /// tries the widget's smaller sizes; if nothing fits, it says the desktop is full
+    /// and adds nothing, instead of stacking the new widget on top of another.
     @discardableResult
-    func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) -> WidgetModel {
+    func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) -> WidgetModel? {
         let chosen = size ?? kind.defaultSize
+        let area = { (s: WidgetSize) in s.cells.columns * s.cells.rows }
+        let fallbacks = kind.sizes.filter { area($0) < area(chosen) }.sorted { area($0) > area($1) }
         let screen = NSScreen.main ?? NSScreen.screens.first
-        let bounds = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let grid = DesktopGrid(bounds: DesktopGrid.area(of: screen))
         let occupied = store.widgets.map(\.frame)
-        let topLeft = Placement.freeTopLeft(for: chosen.dimensions, in: bounds, occupied: occupied)
-        let model = WidgetModel(kind: kind, size: chosen, topLeft: topLeft)
+        var found: (WidgetSize, CGRect)?
+        for candidate in [chosen] + fallbacks {
+            let rect = grid.firstFree(size: candidate, occupied: occupied).map { grid.rect(at: $0, size: candidate) }
+                ?? DesktopGrid.place(grid.rect(at: .init(column: 0, row: 0), size: candidate), size: candidate, occupied: occupied)
+            if let rect {
+                found = (candidate, rect)
+                break
+            }
+        }
+        guard let (fitted, rect) = found else {
+            Self.showNoRoom("There's no free space for \(kind.title).",
+                            detail: "Remove a widget or make one smaller, then add it again.")
+            return nil
+        }
+        let model = WidgetModel(kind: kind, size: fitted, topLeft: CGPoint(x: rect.minX, y: rect.maxY))
         applyInitialConfig(to: model)
         store.add(model)
         if appearance.hidden {
@@ -91,6 +145,17 @@ final class AppController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// Tells you a widget couldn't be placed because the grid is full.
+    static func showNoRoom(_ message: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
     func removeWidget(_ id: UUID) {
         // Defer so a context menu inside the widget can finish closing first.
         DispatchQueue.main.async { [weak self] in
@@ -107,16 +172,107 @@ final class AppController: NSObject, NSMenuDelegate {
         store.widgets.filter { $0.id != id }.map(\.frame)
     }
 
+    /// Packs every widget into the grid from the top-left, biggest first so nothing gets stranded.
     func arrangeWidgets() {
         let screen = NSScreen.main ?? NSScreen.screens.first
-        let bounds = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let grid = DesktopGrid(bounds: DesktopGrid.area(of: screen))
         var placed: [CGRect] = []
-        for model in store.widgets {
-            let size = model.size.dimensions
-            let topLeft = Placement.freeTopLeft(for: size, in: bounds, occupied: placed)
-            let rect = CGRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height)
+        let ordered = store.widgets.sorted {
+            let a = $0.size.cells, b = $1.size.cells
+            return a.columns * a.rows > b.columns * b.rows
+        }
+        for model in ordered {
+            let rect = grid.firstFree(size: model.size, occupied: placed).map { grid.rect(at: $0, size: model.size) }
+                ?? DesktopGrid.place(model.frame, size: model.size, occupied: placed)
+                ?? model.frame
             placed.append(rect)
             panels[model.id]?.move(to: rect, animated: true)
+        }
+    }
+
+    // MARK: Drag reflow
+
+    /// Where every other widget was when the drag began; each step is planned from these,
+    /// so widgets that were pushed aside slide back once the dragged one moves on.
+    private var dragOriginals: [(id: UUID, size: WidgetSize, rect: CGRect)] = []
+    private var dragPlan: [UUID: CGRect] = [:]
+
+    /// Where the dragged widget started, so it can go back there when there's no room.
+    private var dragHome: CGRect?
+
+    func beginDrag(_ id: UUID) {
+        dragOriginals = store.widgets.filter { $0.id != id }.map { ($0.id, $0.size, $0.frame) }
+        dragHome = store.widgets.first { $0.id == id }?.frame
+        dragPlan = [:]
+    }
+
+    /// The slot the dragged widget takes if dropped now. Widgets in that slot slide to the
+    /// nearest free spot, like app icons on an iPhone; if there's no room for them, the
+    /// dragged widget takes the nearest free slot instead and nothing moves.
+    func reflow(dragging frame: CGRect, size: WidgetSize) -> CGRect {
+        let grid = DesktopGrid.forRect(frame)
+        let target = grid.rect(at: grid.nearestCell(to: frame, size: size), size: size)
+        var plan: [UUID: CGRect] = [:]
+        var occupied = [target]
+        var bumped: [(id: UUID, size: WidgetSize, rect: CGRect)] = []
+        for other in dragOriginals {
+            if other.rect.insetBy(dx: 2, dy: 2).intersects(target) {
+                bumped.append(other)
+            } else {
+                occupied.append(other.rect)
+            }
+        }
+        bumped.sort { $0.rect.maxY != $1.rect.maxY ? $0.rect.maxY > $1.rect.maxY : $0.rect.minX < $1.rect.minX }
+        for other in bumped {
+            let otherGrid = DesktopGrid.forRect(other.rect)
+            guard let cell = otherGrid.nearestFree(to: otherGrid.nearestCell(to: other.rect, size: other.size),
+                                                   size: other.size, occupied: occupied) else {
+                showPlan([:])
+                return DesktopGrid.place(frame, size: size, occupied: dragOriginals.map(\.rect))
+                    ?? dragHome ?? target
+            }
+            let moved = otherGrid.rect(at: cell, size: other.size)
+            plan[other.id] = moved
+            occupied.append(moved)
+        }
+        showPlan(plan)
+        return target
+    }
+
+    /// Slides pushed-aside widgets to their planned spots (and the rest back home) without saving yet.
+    private func showPlan(_ plan: [UUID: CGRect]) {
+        for other in dragOriginals {
+            let rect = plan[other.id] ?? other.rect
+            if (dragPlan[other.id] ?? other.rect) != rect {
+                panels[other.id]?.preview(at: rect)
+            }
+        }
+        dragPlan = plan
+    }
+
+    /// Saves where the pushed-aside widgets ended up.
+    func endDrag() {
+        for (id, rect) in dragPlan {
+            panels[id]?.move(to: rect, animated: false)
+        }
+        dragOriginals = []
+        dragPlan = [:]
+        dragHome = nil
+    }
+
+    /// Moves saved widgets onto the grid once at launch, pulling apart any that overlap.
+    private func tidyOntoGrid() {
+        var placed: [CGRect] = []
+        for model in store.widgets {
+            // A widget with nowhere to go (the desktop was over-full) snaps to its nearest slot;
+            // remove or shrink something and it can be dragged into the freed space.
+            let grid = DesktopGrid.forRect(model.frame)
+            let rect = DesktopGrid.place(model.frame, size: model.size, occupied: placed)
+                ?? grid.rect(at: grid.nearestCell(to: model.frame, size: model.size), size: model.size)
+            placed.append(rect)
+            if rect.origin != model.frame.origin {
+                model.topLeft = CGPoint(x: rect.minX, y: rect.maxY)
+            }
         }
     }
 
@@ -146,13 +302,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private func screensChanged() {
         for model in store.widgets {
-            panels[model.id]?.ensureVisible { [weak self] in
-                guard let self else { return .zero }
-                let screen = NSScreen.main ?? NSScreen.screens.first
-                let bounds = screen?.visibleFrame ?? .zero
-                return Placement.freeTopLeft(for: model.size.dimensions, in: bounds,
-                                             occupied: self.widgetFrames(excluding: model.id))
-            }
+            panels[model.id]?.ensureVisible(occupied: widgetFrames(excluding: model.id))
         }
     }
 
@@ -184,7 +334,7 @@ final class AppController: NSObject, NSMenuDelegate {
             for kind in WidgetKind.allCases where kind.category == category {
                 let entry = menuItem(kind.title, #selector(quickAdd(_:)))
                 entry.representedObject = kind.rawValue
-                entry.image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil)
+                entry.image = kind.isSlate ? SlateLogo.menuImage : NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil)
                 entry.indentationLevel = 1
                 addMenu.addItem(entry)
             }
@@ -193,6 +343,8 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(add)
         menu.addItem(menuItem("Widget Gallery…", #selector(openGallery), key: "n"))
         menu.addItem(menuItem("Edit Widgets…", #selector(openMyWidgets), key: "e"))
+        menu.addItem(menuItem("Wallpapers…", #selector(openWallpapers)))
+        menu.addItem(menuItem("Accounts…", #selector(openAccounts)))
         menu.addItem(.separator())
 
         let hide = menuItem("Hide Widgets", #selector(toggleHidden), key: "h")
@@ -215,6 +367,19 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(menuItem("Quit Home Widgets", #selector(quit), key: "q"))
     }
 
+    /// Right-click menu on the Dock icon.
+    func dockMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(menuItem("Widget Gallery", #selector(openGallery)))
+        menu.addItem(menuItem("My Widgets", #selector(openMyWidgets)))
+        menu.addItem(.separator())
+        let hide = menuItem("Hide Widgets", #selector(toggleHidden))
+        hide.state = appearance.hidden ? .on : .off
+        menu.addItem(hide)
+        menu.addItem(menuItem("Arrange Widgets", #selector(arrangeFromMenu)))
+        return menu
+    }
+
     private func menuItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
@@ -228,7 +393,9 @@ final class AppController: NSObject, NSMenuDelegate {
 
     @objc private func openGallery() { showSettings(pane: .gallery) }
     @objc private func openMyWidgets() { showSettings(pane: .myWidgets) }
+    @objc private func openWallpapers() { showSettings(pane: .wallpapers) }
     @objc private func openAppearance() { showSettings(pane: .appearance) }
+    @objc private func openAccounts() { showSettings(pane: .accounts) }
     @objc private func toggleHidden() { appearance.hidden.toggle() }
     @objc private func toggleLock() { appearance.locked.toggle() }
     @objc private func toggleFloating() { appearance.layer = appearance.layer == .floating ? .desktop : .floating }

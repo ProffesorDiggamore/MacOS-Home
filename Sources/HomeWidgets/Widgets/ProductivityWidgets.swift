@@ -21,7 +21,7 @@ struct RemindersWidget: View {
 
     @ViewBuilder
     private var content: some View {
-        let limit = model.size == .large ? 10 : (model.size == .medium ? 4 : 3)
+        let limit = model.family == .large ? 10 : (model.family == .medium ? 4 : 3)
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Image(systemName: "list.bullet.circle.fill")
@@ -49,7 +49,7 @@ struct RemindersWidget: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(reminders.prefix(limit)) { reminder in
-                    ReminderRow(reminder: reminder, compact: model.size == .small) {
+                    ReminderRow(reminder: reminder, compact: model.family == .small) {
                         if !isSample { service.complete(reminder.id) }
                     }
                 }
@@ -212,7 +212,7 @@ struct FocusTimerWidget: View {
 
     var body: some View {
         Group {
-            switch model.size {
+            switch model.family {
             case .small, .large: small
             case .medium: medium
             }
@@ -434,7 +434,30 @@ struct WeatherWidget: View {
 
     @ViewBuilder
     private func content(_ report: WeatherReport) -> some View {
-        switch model.size {
+        switch model.family {
+        case .small where model.size == .tall:
+            // Now on top, the next few hours down the middle, today's range at the bottom.
+            VStack(alignment: .leading, spacing: 6) {
+                Text(report.place).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Text(temp(report.temperature)).font(.system(size: 40, weight: .light)).monospacedDigit()
+                ForEach(report.hours.dropFirst().prefix(5)) { hour in
+                    HStack(spacing: 6) {
+                        Text(DateFormats.string(hour.date, template: "j"))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, alignment: .leading)
+                        symbol(hour.code, hour.isDay, size: 14).frame(width: 22)
+                        Spacer(minLength: 0)
+                        Text(temp(hour.temperature)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                    }
+                    .frame(maxHeight: .infinity)
+                }
+                Text("H:\(temp(report.high)) L:\(temp(report.low))")
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .widgetPadding(16)
         case .small:
             currentBlock(report, large: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -474,7 +497,10 @@ struct WeatherWidget: View {
                 }
                 hourly(report, count: 6)
                 Divider().overlay(Color.white.opacity(0.3))
-                DailyForecast(days: Array(report.days.prefix(5)), temp: temp)
+                // The portrait shape has room for the whole week.
+                DailyForecast(days: Array(report.days.prefix(model.size == .portrait ? 7 : 5)), temp: temp,
+                              spacing: model.size == .portrait ? 15 : 6)
+                if model.size == .portrait { Spacer(minLength: 0) }
             }
             .widgetPadding(16)
         }
@@ -484,12 +510,13 @@ struct WeatherWidget: View {
 private struct DailyForecast: View {
     let days: [WeatherReport.Day]
     let temp: (Double) -> String
+    var spacing: CGFloat = 6
 
     var body: some View {
         let low = days.map(\.low).min() ?? 0
         let high = days.map(\.high).max() ?? 1
         let span = max(high - low, 1)
-        VStack(spacing: 6) {
+        VStack(spacing: spacing) {
             ForEach(days) { day in
                 HStack(spacing: 8) {
                     Text(Calendar.current.isDateInToday(day.date) ? "Today" : DateFormats.string(day.date, template: "EEE"))

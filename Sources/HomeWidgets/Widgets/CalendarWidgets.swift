@@ -36,7 +36,7 @@ struct CalendarWidget: View {
 
     @ViewBuilder
     private func content(_ now: Date) -> some View {
-        switch model.size {
+        switch model.family {
         case .small:
             VStack(alignment: .leading, spacing: 0) {
                 Text(DateFormats.string(now, template: "EEEE").uppercased())
@@ -289,7 +289,7 @@ struct CountdownWidget: View {
         let unit = label.unit
         let icon = model[CountdownKeys.symbol].symbol
 
-        switch model.size {
+        switch model.family {
         case .small, .large:
             VStack(alignment: .leading, spacing: 2) {
                 Image(systemName: icon)
@@ -371,7 +371,25 @@ struct YearProgressWidget: View {
         let yearFraction = fraction(.year, now)
         let tone = style.tone(accent)
 
-        switch model.size {
+        switch model.family {
+        case .small where model.size == .tall:
+            // The dots fill the middle of the tall shape.
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(year))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(tone)
+                DayDots(total: daysInYear, filled: dayOfYear, color: tone)
+                    .frame(maxHeight: .infinity)
+                Text(String(format: "%.1f%%", yearFraction * 100))
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .fitLine(0.5)
+                Text("Day \(dayOfYear) of \(daysInYear)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .widgetPadding(16)
         case .small:
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(year))
@@ -413,7 +431,7 @@ struct YearProgressWidget: View {
                         .monospacedDigit()
                 }
                 DayDots(total: daysInYear, filled: dayOfYear, color: tone)
-                    .frame(height: 150)
+                    .frame(minHeight: 150, maxHeight: .infinity)
                 ProgressRow(label: "Month", value: fraction(.month, now), color: tone)
                 ProgressRow(label: "Week", value: fraction(.weekOfYear, now), color: tone)
                 ProgressRow(label: "Today", value: fraction(.day, now), color: tone)

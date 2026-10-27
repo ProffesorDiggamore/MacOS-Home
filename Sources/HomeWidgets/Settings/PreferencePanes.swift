@@ -44,6 +44,24 @@ struct AppearanceView: View {
                 Toggle("Drop shadow", isOn: $appearance.showShadow)
             }
 
+            Section {
+                Picker("Colors", selection: $appearance.colorMode) {
+                    ForEach(WidgetColorMode.allCases) { Text($0.label).tag($0) }
+                }
+                switch appearance.colorMode {
+                case .theme: ThemeEditor(colors: $appearance.themeColors)
+                case .single: ColorChoiceRow(hex: $appearance.singleColor)
+                case .original: EmptyView()
+                }
+                ThemePreview(look: WidgetLook(style: .glass, mode: appearance.colorMode,
+                                              single: Color(hexString: appearance.singleColor) ?? .green,
+                                              theme: appearance.themeColors.map { Color(hexString: $0) ?? .gray }))
+            } header: {
+                Text("Widget Colors")
+            } footer: {
+                Text("Changes every widget at once. To give one widget different colors, right-click it › Colors, or open Edit Widget.")
+            }
+
             Section("Color & Type") {
                 LabeledContent("Accent color") {
                     HStack(spacing: 8) {
@@ -118,14 +136,33 @@ struct GeneralView: View {
 
     var body: some View {
         Form {
-            Section("Desktop") {
+            Section {
                 Picker("Widgets appear", selection: $appearance.layer) {
                     ForEach(WidgetLayer.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.radioGroup)
                 Toggle("Lock widget positions", isOn: $appearance.locked)
                 Toggle("Hide all widgets", isOn: $appearance.hidden)
+                Toggle("Show on every desktop", isOn: $appearance.allDesktops)
                 Button("Arrange Widgets Neatly") { AppController.shared.arrangeWidgets() }
+            } footer: {
+                Text(appearance.allDesktops
+                     ? "On every desktop, macOS only draws widgets once a three-finger swipe has finished."
+                     : "Widgets live on this desktop and slide in with it when you swipe back from a full-screen app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            GridPositionSection()
+
+            Section("App") {
+                Toggle("Show icon in the Dock", isOn: $appearance.showInDock)
+                Toggle("Show icon in the menu bar", isOn: $appearance.showMenuBarIcon)
+                if !appearance.showInDock && !appearance.showMenuBarIcon {
+                    Text("To get back here later, open Home Widgets from your Applications folder or Spotlight.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Behavior") {
@@ -191,5 +228,163 @@ struct AboutView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
+/// Quick swatches plus a full colour picker, stored as RRGGBB.
+struct ColorChoiceRow: View {
+    @Binding var hex: String
+    private static let swatches = ["34C759", "FFCC00", "0A84FF", "FF9500", "FF3B30", "AF52DE", "FF2D55", "5AC8FA", "FFFFFF"]
+
+    var body: some View {
+        LabeledContent("Color") {
+            HStack(spacing: 8) {
+                ForEach(Self.swatches, id: \.self) { value in
+                    Button { hex = value } label: {
+                        Circle()
+                            .fill(Color(hexString: value) ?? .green)
+                            .frame(width: 20, height: 20)
+                            .overlay(Circle().strokeBorder(Color.primary.opacity(hex == value ? 0.9 : 0.15), lineWidth: hex == value ? 2 : 1).padding(hex == value ? -3 : 0))
+                    }
+                    .buttonStyle(.plain)
+                }
+                ColorPicker("", selection: Binding(get: { Color(hexString: hex) ?? .green }, set: { hex = $0.hexString }), supportsOpacity: false)
+                    .labelsHidden()
+            }
+        }
+    }
+}
+
+
+/// Presets plus one colour picker per family. Editing a slot recolours that
+/// family in every widget that uses this theme.
+struct ThemeEditor: View {
+    @Binding var colors: [String]
+
+    private func binding(_ slot: ThemeSlot) -> Binding<Color> {
+        Binding(get: { Color(hexString: colors.indices.contains(slot.rawValue) ? colors[slot.rawValue] : "888888") ?? .gray },
+                set: { color in
+                    var next = colors.count == ThemeSlot.allCases.count ? colors : ThemePreset.standard
+                    next[slot.rawValue] = color.hexString
+                    colors = next
+                })
+    }
+
+    var body: some View {
+        LabeledContent("Presets") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ThemePreset.all) { preset in
+                        Button { colors = preset.colors } label: {
+                            VStack(spacing: 4) {
+                                HStack(spacing: 2) {
+                                    ForEach(preset.colors.indices, id: \.self) { i in
+                                        Circle().fill(Color(hexString: preset.colors[i]) ?? .gray).frame(width: 11, height: 11)
+                                    }
+                                }
+                                Text(preset.name).font(.caption2).lineLimit(1)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(colors == preset.colors ? 0.14 : 0.05)))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(colors == preset.colors ? Color.accentColor : .clear, lineWidth: 1.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxWidth: 420)
+        }
+        ForEach(ThemeSlot.allCases) { slot in
+            LabeledContent {
+                HStack(spacing: 10) {
+                    Text(slot.usedBy).font(.caption).foregroundStyle(.secondary)
+                    ColorPicker("", selection: binding(slot), supportsOpacity: false).labelsHidden()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(slot.original).frame(width: 8, height: 8).help("Originally \(slot.label.lowercased())")
+                    Text(slot.label)
+                }
+            }
+        }
+    }
+}
+
+/// What the colours look like on real widget parts: CPU/GPU-style rings and a graph.
+struct ThemePreview: View {
+    let look: WidgetLook
+    private static let samples: [(String, Color, Double)] = [
+        ("CPU", .blue, 0.42), ("GPU", .purple, 0.68), ("Memory", .green, 0.55), ("Storage", .orange, 0.8), ("Alerts", .red, 0.3),
+    ]
+
+    var body: some View {
+        LabeledContent("Preview") {
+            HStack(spacing: 14) {
+                ForEach(Self.samples, id: \.0) { name, color, value in
+                    VStack(spacing: 4) {
+                        ZStack {
+                            Circle().stroke(look.tone(color).opacity(0.22), lineWidth: 5)
+                            Circle().trim(from: 0, to: value)
+                                .stroke(look.tone(color), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                            Text("\(Int(value * 100))").font(.system(size: 10, weight: .semibold, design: .rounded))
+                        }
+                        .frame(width: 38, height: 38)
+                        Text(name).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.75)))
+            .environment(\.colorScheme, .dark)
+        }
+    }
+}
+
+/// Slides the whole widget grid up or down (to keep the bottom row clear of the Dock) and
+/// optionally drops rows to make more room to move.
+private struct GridPositionSection: View {
+    @ObservedObject private var appearance = AppearanceSettings.shared
+
+    private var bounds: CGRect { DesktopGrid.area(of: NSScreen.main ?? NSScreen.screens.first) }
+    private var fit: Int {
+        let area = bounds.insetBy(dx: DesktopGrid.margin, dy: DesktopGrid.margin)
+        return max(1, Int((area.height + WidgetSize.spacing) / DesktopGrid.pitch))
+    }
+
+    var body: some View {
+        let rows = appearance.gridRows > 0 ? min(appearance.gridRows, fit) : fit
+        let slack = Double(DesktopGrid.slack(bounds: bounds, rows: rows))
+        Section {
+            HStack {
+                Text("Position")
+                Slider(value: Binding(get: { min(max(appearance.gridOffset, -slack), slack) },
+                                      set: { appearance.gridOffset = $0.rounded() }),
+                       in: -max(slack, 1)...max(slack, 1)) {
+                    Text("Position")
+                } minimumValueLabel: {
+                    Image(systemName: "arrow.down")
+                } maximumValueLabel: {
+                    Image(systemName: "arrow.up")
+                }
+                .labelsHidden()
+                .disabled(slack < 1)
+            }
+            Stepper(value: Binding(get: { rows }, set: { appearance.gridRows = $0 >= fit ? 0 : $0 }), in: 1...fit) {
+                Text("Rows: \(rows)\(rows == fit ? " (as many as fit)" : "")")
+            }
+            Button("Center Grid") { appearance.gridOffset = 0 }
+                .disabled(appearance.gridOffset == 0)
+        } header: {
+            Text("Grid")
+        } footer: {
+            Text(slack < 1
+                 ? "The grid already fills the screen. Use one row fewer to make room to move it."
+                 : "Drag to move every widget up or down together, for example to keep the bottom row clear of the Dock. Fewer rows leave more room to move.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }

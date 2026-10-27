@@ -22,7 +22,25 @@ final class StorageMonitor: PollingMonitor {
 
     var startup: Volume? { volumes.first(where: \.isRoot) ?? volumes.first }
 
+    private let queue = DispatchQueue(label: "HomeWidgets.storage", qos: .utility)
+    private var inFlight = false
+
+    /// Asking for "available for important usage" makes macOS total up purgeable space,
+    /// which can take a moment, so it runs off the main thread.
     override func sample() {
+        guard !inFlight else { return }
+        inFlight = true
+        queue.async { [weak self] in
+            let result = Self.readVolumes()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.inFlight = false
+                if result != self.volumes { self.volumes = result }
+            }
+        }
+    }
+
+    private static func readVolumes() -> [Volume] {
         let keys: [URLResourceKey] = [
             .volumeNameKey, .volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
             .volumeAvailableCapacityKey, .volumeIsInternalKey, .volumeIsRootFileSystemKey, .volumeIsBrowsableKey,
@@ -46,6 +64,6 @@ final class StorageMonitor: PollingMonitor {
             if lhs.isRoot != rhs.isRoot { return lhs.isRoot }
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
-        if result != volumes { volumes = result }
+        return result
     }
 }

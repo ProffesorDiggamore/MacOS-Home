@@ -10,7 +10,7 @@ OUT="build/screenshots"
 mkdir -p "$OUT"
 
 launch() {
-  open "$APP"
+  if [[ "${2:-}" == "first" ]]; then open "$APP"; else open "$APP" --args -HWNoWindow YES; fi
   sleep "${1:-10}"
   if ! pgrep -x HomeWidgets >/dev/null; then
     echo "✗ HomeWidgets is not running (crashed?)"
@@ -27,7 +27,7 @@ quit() {
 }
 
 # 1. First launch: default widgets + the Widget Gallery window.
-launch 14
+launch 14 first
 screencapture -x "$OUT/1-first-launch.png"
 quit
 
@@ -53,7 +53,7 @@ WIDTH=$(sips -g pixelWidth "$OUT/2-glass.png" | awk '/pixelWidth/ {print $2}')
 HEIGHT=$(sips -g pixelHeight "$OUT/2-glass.png" | awk '/pixelHeight/ {print $2}')
 if [[ "$WIDTH" -gt 2000 ]]; then WIDTH=$((WIDTH / 2)); HEIGHT=$((HEIGHT / 2)); fi
 LAYOUT="$HOME/Library/Application Support/HomeWidgets/widgets.json"
-for set in 1 2 3; do
+for set in 1 2 3 4 5 6 7 8; do
   python3 scripts/layout-sets.py "$set" "$WIDTH" "$HEIGHT" "$LAYOUT"
   launch 12
   screencapture -x "$OUT/$((5 + set))-all-widgets-$set.png"

@@ -31,16 +31,21 @@ final class GPUMonitor: PollingMonitor {
         var best: (device: Double, renderer: Double, tiler: Double, memory: UInt64)?
         var service = IOIteratorNext(iterator)
         while service != 0 {
-            var unmanaged: Unmanaged<CFMutableDictionary>?
-            if IORegistryEntryCreateCFProperties(service, &unmanaged, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-               let cfProperties = unmanaged?.takeRetainedValue(),
-               let properties = (cfProperties as NSDictionary) as? [String: Any] {
-                if coreCount == nil, let cores = properties["gpu-core-count"] as? NSNumber {
-                    coreCount = cores.intValue
+            // The full property list is large; after the first read only the statistics are fetched.
+            var properties: [String: Any] = [:]
+            if coreCount == nil && name == nil {
+                var unmanaged: Unmanaged<CFMutableDictionary>?
+                if IORegistryEntryCreateCFProperties(service, &unmanaged, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+                   let cfProperties = unmanaged?.takeRetainedValue() {
+                    properties = (cfProperties as NSDictionary) as? [String: Any] ?? [:]
                 }
-                if name == nil, let model = properties["model"] as? String {
-                    name = model
-                }
+                if let cores = properties["gpu-core-count"] as? NSNumber { coreCount = cores.intValue }
+                if let model = properties["model"] as? String { name = model }
+            } else if let stats = IORegistryEntryCreateCFProperty(service, "PerformanceStatistics" as CFString, kCFAllocatorDefault, 0)?
+                        .takeRetainedValue() {
+                properties["PerformanceStatistics"] = stats
+            }
+            do {
                 if let stats = properties["PerformanceStatistics"] as? [String: Any] {
                     let device = Self.number(stats["Device Utilization %"]) ?? Self.number(stats["GPU Activity(%)"]) ?? 0
                     let renderer = Self.number(stats["Renderer Utilization %"]) ?? device

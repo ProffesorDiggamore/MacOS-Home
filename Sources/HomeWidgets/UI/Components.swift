@@ -189,6 +189,30 @@ struct Ticking<Content: View>: View {
     }
 }
 
+/// Redraws its content at a fixed frame rate while the widget is visible; pauses when covered.
+struct Animated<Content: View>: View {
+    var fps: Double = 20
+    @ViewBuilder var content: (Date) -> Content
+    @Environment(\.widgetIsVisible) private var visible
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / max(1, fps), paused: !visible)) { timeline in
+            content(timeline.date)
+        }
+    }
+}
+
+/// A deterministic pseudo-random number in 0..<1 for a seed (stable across frames).
+func seededRandom(_ seed: Int) -> Double {
+    var x = UInt64(bitPattern: Int64(seed)) &* 0x9E37_79B9_7F4A_7C15
+    x ^= x >> 30
+    x = x &* 0xBF58_476D_1CE4_E5B9
+    x ^= x >> 27
+    x = x &* 0x94D0_49BB_1331_11EB
+    x ^= x >> 31
+    return Double(x % 1_000_000) / 1_000_000
+}
+
 /// Centered icon + message used for empty and permission states.
 struct WidgetMessage: View {
     let symbol: String
@@ -281,5 +305,40 @@ extension View {
     /// Makes text never wrap and shrink a bit if needed.
     func fitLine(_ minimumScale: CGFloat = 0.6) -> some View {
         lineLimit(1).minimumScaleFactor(minimumScale)
+    }
+}
+
+/// Chooses how to lay out a set of tiles (app icons, links, buttons) so each one is as big as
+/// the widget allows. A few tiles in a big widget grow instead of huddling in the middle.
+struct TileLayout {
+    let columns: Int
+    let rows: Int
+    /// Side length of each tile's icon.
+    let tile: CGFloat
+
+    /// How many tiles fit at the smallest comfortable size.
+    static func capacity(in size: CGSize, label: CGFloat, spacing: CGFloat = 8, minTile: CGFloat) -> Int {
+        let columns = max(1, Int((size.width + spacing) / (minTile + 16 + spacing)))
+        let rows = max(1, Int((size.height + spacing) / (minTile + label + spacing)))
+        return columns * rows
+    }
+
+    static func best(count: Int, in size: CGSize, label: CGFloat, spacing: CGFloat = 8,
+                     minTile: CGFloat, maxTile: CGFloat) -> TileLayout {
+        var best = TileLayout(columns: 1, rows: 1, tile: minTile)
+        guard count > 0 else { return best }
+        for columns in 1...count {
+            let rows = (count + columns - 1) / columns
+            let cellWidth = (size.width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
+            let cellHeight = (size.height - spacing * CGFloat(rows - 1)) / CGFloat(rows)
+            let tile = max(minTile * 0.8, min(maxTile, cellWidth * 0.82, cellHeight - label))
+            // On a tie (both hit the size cap), pick the grid whose shape matches the widget's.
+            let shapeMatch = abs(log(Double(columns) / Double(rows)) - log(Double(size.width / max(size.height, 1))))
+            let bestMatch = abs(log(Double(best.columns) / Double(best.rows)) - log(Double(size.width / max(size.height, 1))))
+            if columns == 1 || tile > best.tile + 0.5 || (abs(tile - best.tile) <= 0.5 && shapeMatch < bestMatch) {
+                best = TileLayout(columns: columns, rows: rows, tile: tile)
+            }
+        }
+        return best
     }
 }

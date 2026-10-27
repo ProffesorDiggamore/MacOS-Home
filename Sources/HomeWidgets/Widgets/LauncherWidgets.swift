@@ -43,9 +43,11 @@ struct AppShortcutsWidget: View {
     @ObservedObject private var running = RunningApps.shared
     @State private var dropTargeted = false
 
-    private var columns: Int { model.size == .small ? 2 : 4 }
-    private var rows: Int { model.size == .large ? 4 : 2 }
     private var showLabels: Bool { model[AppShortcutKeys.showLabels] }
+    private var area: CGSize {
+        let dims = model.size.dimensions
+        return CGSize(width: dims.width - 24, height: dims.height - 24)
+    }
 
     private var apps: [String] {
         let stored = model[AppShortcutKeys.apps]
@@ -53,18 +55,23 @@ struct AppShortcutsWidget: View {
     }
 
     var body: some View {
-        let visible = Array(apps.prefix(columns * rows))
-        let iconSize: CGFloat = showLabels ? (model.size == .small ? 46 : 50) : (model.size == .small ? 56 : 60)
+        let label: CGFloat = showLabels ? 22 : 10
+        let visible = Array(apps.prefix(TileLayout.capacity(in: area, label: label, minTile: 44)))
+        // Icons grow to fill the widget when there are only a few apps.
+        let layout = TileLayout.best(count: visible.count, in: area, label: label, minTile: 44, maxTile: 104)
+        let usedColumns = layout.columns
+        let usedRows = layout.rows
+        let iconSize = layout.tile
         VStack(spacing: 0) {
             if visible.isEmpty {
                 WidgetMessage(symbol: "square.grid.3x3", title: "No apps yet",
                               detail: "Drag apps here, or right-click › Edit Widget.")
             } else {
-                Grid(horizontalSpacing: 8, verticalSpacing: showLabels ? 4 : 10) {
-                    ForEach(0..<rows, id: \.self) { row in
+                Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                    ForEach(0..<usedRows, id: \.self) { row in
                         GridRow {
-                            ForEach(0..<columns, id: \.self) { column in
-                                let index = row * columns + column
+                            ForEach(0..<usedColumns, id: \.self) { column in
+                                let index = row * usedColumns + column
                                 if index < visible.count {
                                     AppTile(path: visible[index], iconSize: iconSize, showLabel: showLabels,
                                             isRunning: running.isRunning(visible[index]))
@@ -129,7 +136,7 @@ private struct AppTile: View {
                     .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
                 if showLabel {
                     Text(AppShortcutDefaults.displayName(path))
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: min(13, 8 + iconSize / 22), weight: .medium))
                         .lineLimit(1)
                         .frame(maxWidth: iconSize + 14)
                 }
@@ -284,11 +291,12 @@ struct QuickActionsWidget: View {
         return actions + shortcuts
     }
 
-    private var columns: Int { model.size == .small ? 2 : 4 }
-    private var rows: Int { model.size == .large ? 4 : 2 }
-
     var body: some View {
-        let visible = Array(items.prefix(columns * rows))
+        let dims = model.size.dimensions
+        let area = CGSize(width: dims.width - 24, height: dims.height - 24)
+        let visible = Array(items.prefix(TileLayout.capacity(in: area, label: 18, spacing: 10, minTile: 40)))
+        let layout = TileLayout.best(count: visible.count, in: area, label: 18, spacing: 10, minTile: 40, maxTile: 92)
+        let columns = layout.columns, rows = layout.rows
         Group {
             if visible.isEmpty {
                 WidgetMessage(symbol: "bolt.circle", title: "No actions", detail: "Right-click › Edit Widget to choose actions and Shortcuts.")
@@ -299,7 +307,7 @@ struct QuickActionsWidget: View {
                             ForEach(0..<columns, id: \.self) { column in
                                 let index = row * columns + column
                                 if index < visible.count {
-                                    tile(visible[index])
+                                    tile(visible[index], size: layout.tile)
                                 } else {
                                     Color.clear.frame(width: 1, height: 1)
                                 }
@@ -314,14 +322,14 @@ struct QuickActionsWidget: View {
     }
 
     @ViewBuilder
-    private func tile(_ item: Item) -> some View {
+    private func tile(_ item: Item, size: CGFloat) -> some View {
         switch item {
         case .action(let action):
-            ActionTile(symbol: action.symbol, label: action.label, color: style.tone(action.color), tinted: style == .tinted) {
+            ActionTile(symbol: action.symbol, label: action.label, color: style.tone(action.color), tinted: style == .tinted, size: size) {
                 action.perform()
             }
         case .shortcut(let name):
-            ActionTile(symbol: "square.2.layers.3d.fill", label: name, color: style.tone(.pink), tinted: style == .tinted) {
+            ActionTile(symbol: "square.2.layers.3d.fill", label: name, color: style.tone(.pink), tinted: style == .tinted, size: size) {
                 Shell.launch("/usr/bin/shortcuts", ["run", name])
             }
         }
@@ -333,21 +341,22 @@ private struct ActionTile: View {
     let label: String
     let color: Color
     let tinted: Bool
+    var size: CGFloat = 42
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: size * 0.4, weight: .semibold))
                     .foregroundStyle(tinted ? Color.black.opacity(0.75) : Color.white)
-                    .frame(width: 42, height: 42)
+                    .frame(width: size, height: size)
                     .background(Circle().fill(color.gradient))
                 Text(label)
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: min(13, 7.5 + size / 16), weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .frame(maxWidth: 64)
+                    .frame(maxWidth: size + 24)
             }
         }
         .buttonStyle(WidgetButtonStyle())
@@ -402,8 +411,8 @@ struct FolderWidget: View {
 
     @ViewBuilder
     private var content: some View {
-        let limit = model.size == .large ? 10 : (model.size == .medium ? 4 : 3)
-        VStack(alignment: .leading, spacing: model.size == .small ? 6 : 7) {
+        let limit = model.family == .large ? 10 : (model.family == .medium ? 4 : 3)
+        VStack(alignment: .leading, spacing: model.family == .small ? 6 : 7) {
             Button {
                 Shell.open(path: path)
             } label: {
@@ -420,7 +429,7 @@ struct FolderWidget: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(items.prefix(limit)) { item in
-                    FileRow(item: item, compact: model.size == .small, sample: isSample)
+                    FileRow(item: item, compact: model.family == .small, sample: isSample)
                 }
             }
             Spacer(minLength: 0)

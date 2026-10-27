@@ -9,6 +9,8 @@ import Combine
 /// when a drag ends (to snap the widget into place).
 final class WidgetPanel: NSPanel {
     var isLocked = false
+    var onDragStarted: (() -> Void)?
+    var onDragMoved: (() -> Void)?
     var onDragEnded: (() -> Void)?
 
     private var mouseDownScreenPoint: NSPoint?
@@ -42,9 +44,11 @@ final class WidgetPanel: NSPanel {
                 isDragging = true
                 cancelContentTracking(for: event)
                 NSCursor.closedHand.push()
+                onDragStarted?()
             }
             setFrameOrigin(NSPoint(x: frameAtMouseDown.origin.x + now.x - start.x,
                                    y: frameAtMouseDown.origin.y + now.y - start.y))
+            onDragMoved?()
 
         case .leftMouseUp:
             mouseDownScreenPoint = nil
@@ -75,10 +79,11 @@ final class WidgetPanel: NSPanel {
         super.sendEvent(cancel)
     }
 
+    /// Text fields, sliders and other AppKit controls handle their own dragging.
     private static func isTextView(_ view: NSView?) -> Bool {
         var current = view
         while let candidate = current {
-            if candidate is NSText || candidate is NSTextField { return true }
+            if candidate is NSText || candidate is NSControl { return true }
             current = candidate.superview
         }
         return false
@@ -90,6 +95,27 @@ final class WidgetHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// Tells a widget when the pointer is over it, even though widgets are never the active window.
+final class HoverTracker: NSResponder {
+    var onChange: ((Bool) -> Void)?
+
+    func attach(to view: NSView) {
+        view.addTrackingArea(NSTrackingArea(rect: .zero,
+                                            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                            owner: self,
+                                            userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onChange?(true) }
+    override func mouseExited(with event: NSEvent) { onChange?(false) }
+}
+
+/// True while any widget is being dragged, so see-through widgets can show their edges.
+final class DragState: ObservableObject {
+    static let shared = DragState()
+    @Published var isDragging = false
+}
+
 /// Owns the panel for one widget and keeps it in sync with the model and settings.
 @MainActor
 final class WidgetPanelController {
@@ -97,9 +123,16 @@ final class WidgetPanelController {
     let panel: WidgetPanel
     private var cancellables = Set<AnyCancellable>()
     private let appearance = AppearanceSettings.shared
+    private let hover = HoverTracker()
+    private var hideWork: DispatchWorkItem?
+    private var lastGhost: CGRect?
+    private var lastCell: CGRect?
+    /// The size the panel is laid out for, to go back to if a new size doesn't fit.
+    private var shownSize: WidgetSize
 
     init(model: WidgetModel) {
         self.model = model
+        shownSize = model.size
         panel = WidgetPanel(contentRect: model.frame,
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered,
@@ -111,13 +144,19 @@ final class WidgetPanelController {
         panel.becomesKeyOnlyIfNeeded = true
         panel.isMovableByWindowBackground = false
         panel.animationBehavior = .none
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+        panel.collectionBehavior = Self.behavior(allDesktops: appearance.allDesktops)
         panel.title = model.kind.title
 
         let host = WidgetHostingView(rootView: WidgetView(model: model))
         host.sizingOptions = []
         panel.contentView = host
+        hover.attach(to: host)
+        hover.onChange = { [weak model] inside in
+            if model?.runtime.isHovered != inside { model?.runtime.isHovered = inside }
+        }
 
+        panel.onDragStarted = { [weak self] in self?.dragStarted() }
+        panel.onDragMoved = { [weak self] in self?.dragMoved() }
         panel.onDragEnded = { [weak self] in
             self?.dragEnded()
         }
@@ -131,6 +170,11 @@ final class WidgetPanelController {
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.applySettings() }
+            .store(in: &cancellables)
+        // Pause animations while the widget is covered by windows or hidden.
+        NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: panel)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateVisibility() }
             .store(in: &cancellables)
 
         applySettings()
@@ -150,7 +194,20 @@ final class WidgetPanelController {
         panel.close()
     }
 
+    /// Windows on every Space are only drawn once a Space switch finishes, so by default
+    /// widgets belong to one desktop and slide in with it like regular windows.
+    private static func behavior(allDesktops: Bool) -> NSWindow.CollectionBehavior {
+        allDesktops ? [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+                    : [.stationary, .ignoresCycle, .fullScreenNone]
+    }
+
     func applySettings() {
+        let behavior = Self.behavior(allDesktops: appearance.allDesktops)
+        if panel.collectionBehavior != behavior {
+            panel.collectionBehavior = behavior
+            // Re-showing moves a widget onto the desktop you're looking at.
+            if panel.isVisible { panel.orderOut(nil) }
+        }
         panel.level = appearance.layer.windowLevel
         panel.isLocked = appearance.locked
         let style = model.styleOverride ?? appearance.style
@@ -163,6 +220,39 @@ final class WidgetPanelController {
         refreshShadow()
     }
 
+    /// Becoming visible is instant; going invisible waits a moment, because Spaces
+    /// and Mission Control flicker occlusion during their animations. Pausing and
+    /// restarting every widget on each flicker is what made them slow to come back.
+    private func updateVisibility() {
+        let visible = panel.isVisible && panel.occlusionState.contains(.visible)
+        hideWork?.cancel()
+        if visible {
+            if !model.runtime.isOnScreen { model.runtime.isOnScreen = true }
+        } else if model.runtime.isOnScreen {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                if !(self.panel.isVisible && self.panel.occlusionState.contains(.visible)) {
+                    self.model.runtime.isOnScreen = false
+                }
+            }
+            hideWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+        }
+    }
+
+    /// Called when you switch Spaces (three-finger swipe, leaving a full-screen app).
+    /// Widgets are told they're visible right away instead of waiting for the window
+    /// server's occlusion update, which only arrives after the swipe animation ends.
+    func spaceChanged() {
+        guard !appearance.hidden else { return }
+        hideWork?.cancel()
+        if !model.runtime.isOnScreen { model.runtime.isOnScreen = true }
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            MainActor.assumeIsolated { self?.updateVisibility() }
+        }
+    }
+
     /// The window shadow is computed from the widget's shape, so recompute it after the content draws.
     private func refreshShadow() {
         Task { @MainActor [weak self] in
@@ -171,25 +261,66 @@ final class WidgetPanelController {
         }
     }
 
+    /// A new size keeps the same top-left corner when there's room, otherwise the nearest
+    /// free slot. With no room anywhere, the widget goes back to the size it was.
     private func sizeChanged() {
         let dimensions = model.size.dimensions
         let rect = CGRect(x: model.topLeft.x, y: model.topLeft.y - dimensions.height,
                           width: dimensions.width, height: dimensions.height)
-        let bounds = screenBounds(for: rect)
-        let fitted = Placement.clamp(rect, to: bounds)
-        panel.setFrame(fitted, display: true)
-        model.topLeft = CGPoint(x: fitted.minX, y: fitted.maxY)
+        guard let placed = DesktopGrid.place(rect, size: model.size, occupied: AppController.shared.widgetFrames(excluding: model.id)) else {
+            let wanted = model.size
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.model.size = self.shownSize
+                AppController.showNoRoom("There's no room to make this widget \(wanted.label).",
+                                         detail: "Move or remove a widget to free up space, then try again.")
+            }
+            return
+        }
+        shownSize = model.size
+        panel.setFrame(placed, display: true)
+        model.topLeft = CGPoint(x: placed.minX, y: placed.maxY)
         refreshShadow()
     }
 
+    private func dragStarted() {
+        model.runtime.isDragging = true
+        DragState.shared.isDragging = true
+        lastGhost = nil
+        lastCell = nil
+        AppController.shared.beginDrag(model.id)
+    }
+
+    private func dragMoved() {
+        // Only re-plan when the pointer crosses into a different grid slot.
+        let grid = DesktopGrid.forRect(panel.frame)
+        let cell = grid.rect(at: grid.nearestCell(to: panel.frame, size: model.size), size: model.size)
+        guard cell != lastCell else { return }
+        lastCell = cell
+        let target = AppController.shared.reflow(dragging: panel.frame, size: model.size)
+        guard target != lastGhost else { return }
+        lastGhost = target
+        DropGhost.shared.show(target, below: panel)
+    }
+
     private func dragEnded() {
-        let current = panel.frame
-        let others = AppController.shared.widgetFrames(excluding: model.id)
-        let snapped = Placement.snap(current, others: others, bounds: screenBounds(for: current))
-        if snapped.origin != current.origin {
-            move(to: snapped, animated: true)
+        let target = AppController.shared.reflow(dragging: panel.frame, size: model.size)
+        AppController.shared.endDrag()
+        DropGhost.shared.hide()
+        move(to: target, animated: true)
+        model.runtime.isDragging = false
+        DragState.shared.isDragging = false
+        lastGhost = nil
+        lastCell = nil
+    }
+
+    /// Slides the panel during someone else's drag without saving the position.
+    func preview(at rect: CGRect) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(rect, display: true)
         }
-        model.topLeft = CGPoint(x: snapped.minX, y: snapped.maxY)
     }
 
     func move(to rect: CGRect, animated: Bool) {
@@ -206,69 +337,12 @@ final class WidgetPanelController {
     }
 
     /// Makes sure the widget is on a connected screen (after unplugging a display, say).
-    func ensureVisible(fallback: () -> CGPoint) {
+    func ensureVisible(occupied: [CGRect]) {
         let rect = model.frame
-        let onScreen = NSScreen.screens.contains { $0.visibleFrame.intersects(rect.insetBy(dx: 30, dy: 30)) }
+        let onScreen = NSScreen.screens.contains { DesktopGrid.area(of: $0).intersects(rect.insetBy(dx: 30, dy: 30)) }
         if !onScreen {
-            let topLeft = fallback()
-            let dimensions = model.size.dimensions
-            move(to: CGRect(x: topLeft.x, y: topLeft.y - dimensions.height, width: dimensions.width, height: dimensions.height),
-                 animated: false)
+            let fallback = DesktopGrid(bounds: DesktopGrid.area(of: NSScreen.main)).rect(at: .init(column: 0, row: 0), size: model.size)
+            move(to: DesktopGrid.place(rect, size: model.size, occupied: occupied) ?? fallback, animated: false)
         }
-    }
-
-    private func screenBounds(for rect: CGRect) -> CGRect {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? panel.screen ?? NSScreen.main
-        return screen?.visibleFrame ?? rect
-    }
-}
-
-/// Grid placement and snapping, like Apple's desktop widgets.
-enum Placement {
-    static let gap = WidgetSize.spacing
-    static let margin: CGFloat = 20
-
-    /// First free spot scanning columns from the top-left of the screen.
-    static func freeTopLeft(for size: CGSize, in bounds: CGRect, occupied: [CGRect]) -> CGPoint {
-        let area = bounds.insetBy(dx: margin, dy: margin)
-        let step = (WidgetSize.unit + gap) / 2
-        var x = area.minX
-        while x + size.width <= area.maxX + 0.5 {
-            var top = area.maxY
-            while top - size.height >= area.minY - 0.5 {
-                let candidate = CGRect(x: x, y: top - size.height, width: size.width, height: size.height)
-                let blocked = occupied.contains { $0.insetBy(dx: -(gap - 1), dy: -(gap - 1)).intersects(candidate) }
-                if !blocked { return CGPoint(x: x, y: top) }
-                top -= step
-            }
-            x += step
-        }
-        return CGPoint(x: area.midX - size.width / 2, y: area.midY + size.height / 2)
-    }
-
-    /// Nudges a rect so it lines up with nearby widgets and screen edges.
-    static func snap(_ rect: CGRect, others: [CGRect], bounds: CGRect, threshold: CGFloat = 14) -> CGRect {
-        var xs: [CGFloat] = [bounds.minX + margin, bounds.maxX - margin - rect.width]
-        var tops: [CGFloat] = [bounds.maxY - margin, bounds.minY + margin + rect.height]
-        for other in others {
-            xs += [other.minX, other.maxX + gap, other.minX - gap - rect.width, other.maxX - rect.width]
-            tops += [other.maxY, other.minY - gap, other.maxY + gap + rect.height, other.minY + rect.height]
-        }
-        func nearest(_ value: CGFloat, _ candidates: [CGFloat]) -> CGFloat {
-            guard let best = candidates.min(by: { abs($0 - value) < abs($1 - value) }),
-                  abs(best - value) <= threshold else { return value }
-            return best
-        }
-        let x = nearest(rect.minX, xs)
-        let top = nearest(rect.maxY, tops)
-        return clamp(CGRect(x: x, y: top - rect.height, width: rect.width, height: rect.height), to: bounds)
-    }
-
-    static func clamp(_ rect: CGRect, to bounds: CGRect) -> CGRect {
-        var result = rect
-        result.origin.x = min(max(result.minX, bounds.minX), max(bounds.minX, bounds.maxX - rect.width))
-        result.origin.y = min(max(result.minY, bounds.minY), max(bounds.minY, bounds.maxY - rect.height))
-        return result
     }
 }

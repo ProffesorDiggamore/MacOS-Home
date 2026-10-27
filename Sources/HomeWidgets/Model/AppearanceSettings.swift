@@ -28,6 +28,94 @@ enum WidgetStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// How a widget's graphs, rings and icons are coloured.
+enum WidgetColorMode: String, CaseIterable, Identifiable, Codable {
+    case theme, single, original
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .theme: return "Theme"
+        case .single: return "One Color"
+        case .original: return "Original (many colors)"
+        }
+    }
+
+    /// Reads saved values, including version 3.0's "trio" (now the default theme).
+    init?(stored: String) {
+        if stored == "trio" { self = .theme } else { self.init(rawValue: stored) }
+    }
+}
+
+/// A theme is five colours. Every colour a widget uses falls into one of these
+/// families, so changing a slot recolours it in every widget at once.
+enum ThemeSlot: Int, CaseIterable, Identifiable {
+    case reds, warms, greens, blues, purples
+
+    var id: Int { rawValue }
+    var label: String {
+        switch self {
+        case .reds: return "Reds & pinks"
+        case .warms: return "Oranges & yellows"
+        case .greens: return "Greens & mints"
+        case .blues: return "Blues & teals"
+        case .purples: return "Purples & indigos"
+        }
+    }
+    /// Where you'll see it, so it's clear what each slot changes.
+    var usedBy: String {
+        switch self {
+        case .reds: return "Calendar, alerts, low battery"
+        case .warms: return "Storage, timers, weather sun"
+        case .greens: return "Memory, battery, habits"
+        case .blues: return "CPU, network, Wi-Fi"
+        case .purples: return "GPU, GitHub, clipboard"
+        }
+    }
+    /// The colour widgets were designed with, shown next to each slot.
+    var original: Color {
+        switch self {
+        case .reds: return .red
+        case .warms: return .orange
+        case .greens: return .green
+        case .blues: return .blue
+        case .purples: return .purple
+        }
+    }
+
+    /// Which family a hue (in degrees) belongs to.
+    static func slot(hue: Double) -> ThemeSlot {
+        switch hue {
+        case 15..<75: return .warms
+        case 75..<170: return .greens
+        case 170..<255: return .blues
+        case 255..<330: return .purples
+        default: return .reds
+        }
+    }
+}
+
+struct ThemePreset: Identifiable {
+    let name: String
+    let colors: [String] // one per ThemeSlot, RRGGBB
+    var id: String { name }
+
+    static let all: [ThemePreset] = [
+        ThemePreset(name: "Green · Yellow · Blue", colors: ["FFCC00", "FFCC00", "34C759", "0A84FF", "0A84FF"]),
+        ThemePreset(name: "Apple", colors: ["FF3B30", "FF9500", "34C759", "007AFF", "AF52DE"]),
+        ThemePreset(name: "Ocean", colors: ["5AC8FA", "64D2FF", "30D5C8", "0A84FF", "5E5CE6"]),
+        ThemePreset(name: "Sunset", colors: ["FF2D55", "FF9F0A", "FFD60A", "FF6B6B", "BF5AF2"]),
+        ThemePreset(name: "Neon", colors: ["FF2D95", "FFE600", "39FF14", "00E5FF", "B026FF"]),
+        ThemePreset(name: "Forest", colors: ["D97757", "E9C46A", "52B788", "2A9D8F", "6A994E"]),
+        ThemePreset(name: "Pastel", colors: ["FFADAD", "FFD6A5", "CAFFBF", "9BF6FF", "BDB2FF"]),
+        ThemePreset(name: "Fire", colors: ["FF3B30", "FF9500", "FFCC00", "FF6B35", "FF2D55"]),
+        ThemePreset(name: "Ice", colors: ["E0F2FE", "BAE6FD", "7DD3FC", "38BDF8", "818CF8"]),
+        ThemePreset(name: "Mono", colors: ["F2F2F7", "F2F2F7", "F2F2F7", "F2F2F7", "F2F2F7"]),
+    ]
+
+    static let standard = all[0].colors
+}
+
 enum SchemeOption: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }
@@ -131,8 +219,21 @@ final class AppearanceSettings: ObservableObject {
     @Published var layer: WidgetLayer { didSet { defaults.set(layer.rawValue, forKey: "layer") } }
     @Published var locked: Bool { didSet { defaults.set(locked, forKey: "locked") } }
     @Published var hidden: Bool { didSet { defaults.set(hidden, forKey: "hidden") } }
+    /// Off: widgets belong to one desktop and slide in with it. On: they follow you to every desktop.
+    @Published var allDesktops: Bool { didSet { defaults.set(allDesktops, forKey: "allDesktops") } }
     @Published var refreshInterval: Double { didSet { defaults.set(refreshInterval, forKey: "refreshInterval") } }
     @Published var temperatureUnit: TemperatureUnit { didSet { defaults.set(temperatureUnit.rawValue, forKey: "temperatureUnit") } }
+    @Published var showInDock: Bool { didSet { defaults.set(showInDock, forKey: "showInDock") } }
+    @Published var showMenuBarIcon: Bool { didSet { defaults.set(showMenuBarIcon, forKey: "showMenuBarIcon") } }
+    @Published var colorMode: WidgetColorMode { didSet { defaults.set(colorMode.rawValue, forKey: "colorMode") } }
+    /// The theme's five colours (one per ThemeSlot), RRGGBB.
+    @Published var themeColors: [String] { didSet { defaults.set(themeColors, forKey: "themeColors") } }
+    /// The colour used when `colorMode` is `.single`, as RRGGBB.
+    @Published var singleColor: String { didSet { defaults.set(singleColor, forKey: "singleColor") } }
+    /// Points the widget grid is moved up (positive) or down from the middle of the screen.
+    @Published var gridOffset: Double { didSet { defaults.set(gridOffset, forKey: "gridOffset") } }
+    /// How many rows of widgets to use; 0 means as many as fit.
+    @Published var gridRows: Int { didSet { defaults.set(gridRows, forKey: "gridRows") } }
 
     init() {
         style = WidgetStyle(rawValue: defaults.string(forKey: "style") ?? "") ?? .glass
@@ -144,8 +245,17 @@ final class AppearanceSettings: ObservableObject {
         layer = WidgetLayer(rawValue: defaults.string(forKey: "layer") ?? "") ?? .desktop
         locked = defaults.bool(forKey: "locked")
         hidden = defaults.bool(forKey: "hidden")
-        refreshInterval = defaults.object(forKey: "refreshInterval") as? Double ?? 1.0
+        allDesktops = defaults.bool(forKey: "allDesktops")
+        refreshInterval = defaults.object(forKey: "refreshInterval") as? Double ?? 2.0
         temperatureUnit = TemperatureUnit(rawValue: defaults.string(forKey: "temperatureUnit") ?? "") ?? .system
+        showInDock = defaults.object(forKey: "showInDock") as? Bool ?? true
+        showMenuBarIcon = defaults.object(forKey: "showMenuBarIcon") as? Bool ?? true
+        colorMode = WidgetColorMode(stored: defaults.string(forKey: "colorMode") ?? "") ?? .theme
+        let savedTheme = defaults.stringArray(forKey: "themeColors") ?? []
+        themeColors = savedTheme.count == ThemeSlot.allCases.count ? savedTheme : ThemePreset.standard
+        singleColor = defaults.string(forKey: "singleColor") ?? "34C759"
+        gridOffset = defaults.double(forKey: "gridOffset")
+        gridRows = defaults.integer(forKey: "gridRows")
     }
 
     var accentColor: Color { accent.color }

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case gallery, myWidgets, appearance, general, about
+    case gallery, myWidgets, wallpapers, accounts, appearance, general, about
     var id: String { rawValue }
 }
 
@@ -21,8 +21,10 @@ struct SettingsRootView: View {
                 Section("Widgets") {
                     Label("Widget Gallery", systemImage: "square.grid.2x2").tag(SettingsPane.gallery)
                     Label("My Widgets", systemImage: "rectangle.stack").tag(SettingsPane.myWidgets)
+                    Label("Wallpapers", systemImage: "photo.artframe").tag(SettingsPane.wallpapers)
                 }
                 Section("Settings") {
+                    Label("Accounts", systemImage: "person.crop.circle").tag(SettingsPane.accounts)
                     Label("Appearance", systemImage: "paintbrush").tag(SettingsPane.appearance)
                     Label("General", systemImage: "gearshape").tag(SettingsPane.general)
                     Label("About", systemImage: "info.circle").tag(SettingsPane.about)
@@ -33,6 +35,8 @@ struct SettingsRootView: View {
             switch state.pane ?? .gallery {
             case .gallery: GalleryView()
             case .myWidgets: MyWidgetsView()
+            case .wallpapers: WallpaperStudioView()
+            case .accounts: AccountsView()
             case .appearance: AppearanceView()
             case .general: GeneralView()
             case .about: AboutView()
@@ -55,18 +59,23 @@ struct PreviewBackdrop: View {
 
 // MARK: - Gallery
 
+/// The gallery scrolls smoothly because every card is exactly the same height.
+/// (Cards used to size themselves to their description, so the lazy grid kept
+/// guessing row heights wrong and yanked the scroll position when you flicked fast.)
 struct GalleryView: View {
     @State private var search = ""
+    @State private var category: WidgetCategory?
 
     private func matches(_ kind: WidgetKind) -> Bool {
-        search.isEmpty
-            || kind.title.localizedCaseInsensitiveContains(search)
-            || kind.summary.localizedCaseInsensitiveContains(search)
+        (category == nil || kind.category == category)
+            && (search.isEmpty
+                || kind.title.localizedCaseInsensitiveContains(search)
+                || kind.summary.localizedCaseInsensitiveContains(search))
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
+            LazyVStack(alignment: .leading, spacing: 26, pinnedViews: []) {
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Widget Gallery")
@@ -84,6 +93,14 @@ struct GalleryView: View {
                     .padding(.vertical, 6)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
                     .frame(width: 220)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        CategoryChip(title: "All \(WidgetKind.allCases.count)", selected: category == nil) { category = nil }
+                        ForEach(WidgetCategory.allCases) { item in
+                            CategoryChip(title: item.title, selected: category == item) { category = category == item ? nil : item }
+                        }
+                    }
                 }
                 ForEach(WidgetCategory.allCases) { category in
                     let kinds = WidgetKind.allCases.filter { $0.category == category && matches($0) }
@@ -105,7 +122,48 @@ struct GalleryView: View {
     }
 }
 
+/// Segmented control for the usual three sizes, a menu when there are more shapes.
+struct SizePicker: View {
+    let sizes: [WidgetSize]
+    @Binding var selection: WidgetSize
+
+    var body: some View {
+        if sizes.count <= 3 {
+            Picker("Size", selection: $selection) {
+                ForEach(sizes) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        } else {
+            Picker("Size", selection: $selection) {
+                ForEach(sizes) { size in
+                    Text("\(size.label)  (\(size.cells.columns)×\(size.cells.rows))").tag(size)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+    }
+}
+
+private struct CategoryChip: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(selected ? Color.accentColor : Color.primary.opacity(0.07)))
+                .foregroundStyle(selected ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct GalleryCard: View {
+    static let height: CGFloat = 316
     let kind: WidgetKind
     @State private var size: WidgetSize
     @State private var justAdded = false
@@ -127,32 +185,29 @@ struct GalleryCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: kind.symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white)
+                KindGlyph(kind: kind, size: 14)
                     .frame(width: 26, height: 26)
                     .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(kind.tint.gradient))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(kind.title).font(.headline)
+                    Text(kind.title).font(.headline).lineLimit(1)
                     Text(kind.summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+                        .frame(height: 30, alignment: .topLeading)
+                        .help(kind.summary)
                 }
             }
 
             HStack {
                 if kind.sizes.count > 1 {
-                    Picker("Size", selection: $size) {
-                        ForEach(kind.sizes) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                    SizePicker(sizes: kind.sizes, selection: $size)
+                        .labelsHidden()
+                        .fixedSize()
                 }
                 Spacer()
                 Button {
-                    AppController.shared.addWidget(kind, size: size)
+                    guard AppController.shared.addWidget(kind, size: size) != nil else { return }
                     justAdded = true
                     Task {
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -166,6 +221,7 @@ struct GalleryCard: View {
             }
         }
         .padding(12)
+        .frame(height: Self.height, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
     }
@@ -214,9 +270,7 @@ private struct WidgetListRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: model.kind.symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white)
+            KindGlyph(kind: model.kind, size: 12)
                 .frame(width: 24, height: 24)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(model.kind.tint.gradient))
             VStack(alignment: .leading, spacing: 1) {
@@ -253,18 +307,33 @@ struct WidgetEditor: View {
 
             Section("Layout") {
                 if model.kind.sizes.count > 1 {
-                    Picker("Size", selection: $model.size) {
-                        ForEach(model.kind.sizes) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
+                    SizePicker(sizes: model.kind.sizes, selection: $model.size)
                 }
                 Picker("Style", selection: $model.styleOverride) {
                     Text("Same as Other Widgets").tag(WidgetStyle?.none)
                     ForEach(WidgetStyle.available) { Text($0.label).tag(WidgetStyle?.some($0)) }
                 }
+                Picker("Colors", selection: model.binding(ColorKeys.mode)) {
+                    ForEach(WidgetColorChoice.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+                switch WidgetColorChoice(rawValue: model[ColorKeys.mode]) ?? .same {
+                case .single:
+                    ColorChoiceRow(hex: Binding(get: { model[ColorKeys.single].isEmpty ? AppearanceSettings.shared.singleColor : model[ColorKeys.single] },
+                                                set: { model.config[ColorKeys.single] = $0 }))
+                case .custom:
+                    ThemeEditor(colors: Binding(
+                        get: { model[ColorKeys.theme].count == ThemeSlot.allCases.count ? model[ColorKeys.theme] : AppearanceSettings.shared.themeColors },
+                        set: { model.config[ColorKeys.theme] = $0 }))
+                default:
+                    EmptyView()
+                }
             }
 
             WidgetOptions(model: model)
+
+            if ![WidgetKind.photo, .sticker].contains(model.kind) {
+                BackgroundImageSection(model: model)
+            }
 
             Section {
                 Button("Remove Widget", role: .destructive) {

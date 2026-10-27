@@ -11,6 +11,8 @@ final class WidgetModel: ObservableObject, Identifiable {
     @Published var config: WidgetConfig
     /// When set, overrides the global widget style for just this widget.
     @Published var styleOverride: WidgetStyle?
+    /// Live, unsaved state (e.g. whether the widget is currently visible on screen).
+    let runtime = WidgetRuntime()
 
     init(id: UUID = UUID(),
          kind: WidgetKind,
@@ -27,6 +29,9 @@ final class WidgetModel: ObservableObject, Identifiable {
         self.styleOverride = styleOverride
     }
 
+    /// Which layout to use (small, medium or large), whatever the exact shape.
+    var family: WidgetFamily { size.family }
+
     var frame: CGRect {
         let dimensions = size.dimensions
         return CGRect(x: topLeft.x, y: topLeft.y - dimensions.height,
@@ -39,6 +44,48 @@ final class WidgetModel: ObservableObject, Identifiable {
 
     func binding<Value: ConfigStorable>(_ key: ConfigKey<Value>) -> Binding<Value> {
         Binding(get: { self.config[key] }, set: { self.config[key] = $0 })
+    }
+}
+
+/// Things about a widget that change constantly and are never saved.
+final class WidgetRuntime: ObservableObject {
+    /// False while the widget is covered by other windows or hidden, so animations can pause.
+    @Published var isOnScreen = true
+    /// The pointer is over the widget.
+    @Published var isHovered = false
+    /// The widget is being dragged right now.
+    @Published var isDragging = false
+}
+
+/// Settings every widget has: a custom background image.
+enum BackgroundKeys {
+    static let image = ConfigKey("bgImage", "")
+    static let dim = ConfigKey("bgDim", 0.25)
+    static let blur = ConfigKey("bgBlur", 0.0)
+}
+
+/// A widget's own colour choice ("" = same as other widgets).
+enum ColorKeys {
+    /// "", "theme", "custom", "single" or "original" (see WidgetColorChoice).
+    static let mode = ConfigKey("colorMode", "")
+    static let single = ConfigKey("singleColor", "")
+    /// This widget's own five theme colours when mode is "custom".
+    static let theme = ConfigKey<[String]>("themeColors", [])
+}
+
+/// What a single widget can choose in Edit Widget or its right-click menu.
+enum WidgetColorChoice: String, CaseIterable, Identifiable {
+    case same = "", theme, custom, single, original
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .same: return "Same as Other Widgets"
+        case .theme: return "Theme"
+        case .custom: return "Its Own Theme"
+        case .single: return "One Color"
+        case .original: return "Original (many colors)"
+        }
     }
 }
 
